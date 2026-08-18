@@ -19,20 +19,10 @@ every plugin that displays it.
 
 ## Installation
 
-The repository is private, so add it as a VCS repository and require it:
+Install the package from Packagist:
 
-```json
-{
-	"repositories": [
-		{
-			"type": "vcs",
-			"url": "git@github.com:stellarwp/core-update-notice.git"
-		}
-	],
-	"require": {
-		"stellarwp/core-update-notice": "dev-main"
-	}
-}
+```bash
+composer require stellarwp/core-update-notice
 ```
 
 Then prefix it with [Strauss](https://github.com/BrianHenryIE/strauss). This is required, not a
