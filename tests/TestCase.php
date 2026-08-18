@@ -9,7 +9,6 @@ use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use Mockery;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
-use StellarWP\CoreUpdateNotice\Config;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 
 abstract class TestCase extends PHPUnitTestCase
@@ -19,8 +18,6 @@ abstract class TestCase extends PHPUnitTestCase
         parent::setUp();
 
         Monkey\setUp();
-
-        Config::reset();
 
         // Escaping helpers behave as identity functions under test.
         Functions\stubs([
@@ -32,7 +29,6 @@ abstract class TestCase extends PHPUnitTestCase
 
     protected function tearDown(): void
     {
-        Config::reset();
         unset($_GET[CoreUpdateNotice::DISMISS_ACTION]);
 
         // Brain\Monkey expectations are Mockery assertions; count them so tests that only assert

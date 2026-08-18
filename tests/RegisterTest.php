@@ -6,105 +6,62 @@ namespace StellarWP\CoreUpdateNotice\Tests;
 
 use Brain\Monkey\Actions;
 use Brain\Monkey\Filters;
-use ReflectionProperty;
-use RuntimeException;
-use StellarWP\CoreUpdateNotice\Config;
+use Brain\Monkey\Functions;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Register;
-use StellarWP\CoreUpdateNotice\Tests\Doubles\AutowiringContainer;
-use StellarWP\CoreUpdateNotice\Tests\Doubles\FakeContainer;
 
 final class RegisterTest extends TestCase
 {
-    public function testConfigReportsWhetherAContainerIsSet(): void
+    public function testItRegistersTheProvidedNoticeInstance(): void
     {
-        $this->assertFalse(Config::hasContainer());
+        $notice = new CoreUpdateNotice();
 
-        Config::setContainer(new FakeContainer());
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)
+            ->once()
+            ->with([$notice, 'selectWinner'], 10, 1);
+        Actions\expectAdded('admin_init')
+            ->once()
+            ->with([$notice, 'handleDismissal'], 10, 1);
+        Actions\expectAdded('admin_notices')
+            ->once()
+            ->with([$notice, 'render'], 10, 1);
 
-        $this->assertTrue(Config::hasContainer());
+        Register::notice($notice);
     }
 
-    public function testGetContainerThrowsWhenNoneIsSet(): void
+    public function testItRejectsRegistrationAfterAdminInit(): void
     {
-        $this->expectException(RuntimeException::class);
+        Actions\expectDone('admin_init')->once();
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->never();
+        Actions\expectAdded('admin_init')->never();
+        Actions\expectAdded('admin_notices')->never();
+        Functions\expect('_doing_it_wrong')
+            ->once()
+            ->with(
+                Register::class . '::notice',
+                'Core update notices must be registered before admin_init.',
+                CoreUpdateNotice::NOTICE_VERSION
+            );
 
-        Config::getContainer();
+        do_action('admin_init');
+
+        Register::notice(new CoreUpdateNotice());
     }
 
-    public function testItRegistersWithoutAContainer(): void
+    public function testItRejectsRegistrationDuringAdminInit(): void
     {
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
+        $notice = new CoreUpdateNotice();
 
-        $this->assertInstanceOf(CoreUpdateNotice::class, Register::notice());
-    }
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->never();
+        Actions\expectAdded('admin_init')->never();
+        Actions\expectAdded('admin_notices')->never();
+        Functions\expect('_doing_it_wrong')->once();
+        Actions\expectDone('admin_init')
+            ->once()
+            ->whenHappen(static function () use ($notice): void {
+                Register::notice($notice);
+            });
 
-    public function testItBindsTheNoticeAsASingletonOnTheContainer(): void
-    {
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
-
-        $container = new FakeContainer();
-        Config::setContainer($container);
-
-        $notice = Register::notice();
-
-        $this->assertTrue($container->has(CoreUpdateNotice::class));
-        $this->assertSame($notice, $container->get(CoreUpdateNotice::class));
-    }
-
-    /**
-     * di52 answers has() true for any instantiable class, so a has()-guarded binding would never
-     * run and the container would auto-wire a copy carrying none of the caller's strings.
-     */
-    public function testItBindsOnAnAutowiringContainerAndKeepsTheCallerStrings(): void
-    {
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
-
-        $container = new AutowiringContainer();
-        Config::setContainer($container);
-
-        $notice = Register::notice(['heading' => 'Traduzido']);
-
-        $this->assertSame($notice, $container->get(CoreUpdateNotice::class));
-        $this->assertSame('Traduzido', $this->headingOf($container->get(CoreUpdateNotice::class)));
-    }
-
-    public function testTheBoundInstanceIsStableAcrossResolutions(): void
-    {
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
-
-        $container = new AutowiringContainer();
-        Config::setContainer($container);
-
-        Register::notice();
-
-        $this->assertSame(
-            $container->get(CoreUpdateNotice::class),
-            $container->get(CoreUpdateNotice::class)
-        );
-    }
-
-    /**
-     * @param mixed $notice
-     */
-    private function headingOf($notice): string
-    {
-        $this->assertInstanceOf(CoreUpdateNotice::class, $notice);
-
-        $property = new ReflectionProperty(CoreUpdateNotice::class, 'strings');
-        $property->setAccessible(true);
-
-        /** @var array<string, string> $strings */
-        $strings = $property->getValue($notice);
-
-        return $strings['heading'];
+        do_action('admin_init');
     }
 }

@@ -10,6 +10,7 @@ use Brain\Monkey\Functions;
 use Closure;
 use Mockery;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
+use StellarWP\CoreUpdateNotice\Register;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\NewerNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\OlderNotice;
 use stdClass;
@@ -166,8 +167,8 @@ final class NoticeVersionContestTest extends TestCase
             'heading' => $secondClass === NewerNotice::class ? 'FROM THE UPDATED PLUGIN' : 'FROM THE OLD PLUGIN',
         ]);
 
-        $first->register();
-        $second->register();
+        Register::notice($first);
+        Register::notice($second);
 
         Filters\expectApplied(CoreUpdateNotice::WINNER_FILTER)
             ->times(4)

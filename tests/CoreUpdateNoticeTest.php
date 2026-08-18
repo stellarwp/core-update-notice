@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace StellarWP\CoreUpdateNotice\Tests;
 
-use Brain\Monkey\Actions;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
@@ -103,51 +102,6 @@ final class CoreUpdateNoticeTest extends TestCase
         $output = $this->render($notice);
 
         $this->assertStringContainsString('outdated version of WordPress', $output);
-    }
-
-    public function testRegisterHooksAdminInitAndAdminNotices(): void
-    {
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
-
-        (new CoreUpdateNotice())->register();
-    }
-
-    public function testRegisterRejectsRegistrationAfterAdminInit(): void
-    {
-        Actions\expectDone('admin_init')->once();
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->never();
-        Actions\expectAdded('admin_init')->never();
-        Actions\expectAdded('admin_notices')->never();
-        Functions\expect('_doing_it_wrong')
-            ->once()
-            ->with(
-                CoreUpdateNotice::class . '::register',
-                'Core update notices must be registered before admin_init.',
-                CoreUpdateNotice::NOTICE_VERSION
-            );
-
-        do_action('admin_init');
-
-        (new CoreUpdateNotice())->register();
-    }
-
-    public function testRegisterRejectsRegistrationDuringAdminInit(): void
-    {
-        $notice = new CoreUpdateNotice();
-
-        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->never();
-        Actions\expectAdded('admin_init')->never();
-        Actions\expectAdded('admin_notices')->never();
-        Functions\expect('_doing_it_wrong')->once();
-        Actions\expectDone('admin_init')
-            ->once()
-            ->whenHappen(static function () use ($notice): void {
-                $notice->register();
-            });
-
-        do_action('admin_init');
     }
 
     public function testDismissalIsIgnoredWithoutTheQueryArgument(): void

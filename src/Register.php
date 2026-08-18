@@ -10,29 +10,22 @@ namespace StellarWP\CoreUpdateNotice;
 final class Register
 {
     /**
-     * Build the notice and hook it into wp-admin.
-     *
-     * When a container has been supplied through {@see Config::setContainer()} the notice is bound
-     * there as a singleton, so the plugin can resolve the same instance elsewhere.
-     *
-     * @param array<string, string> $strings Optional translated copy, see CoreUpdateNotice.
+     * Hook a notice instance into wp-admin and enter it into the version contest.
      */
-    public static function notice(array $strings = []): CoreUpdateNotice
+    public static function notice(CoreUpdateNotice $notice): void
     {
-        $notice = new CoreUpdateNotice($strings);
+        if (did_action('admin_init')) {
+            _doing_it_wrong(
+                __METHOD__,
+                'Core update notices must be registered before admin_init.',
+                CoreUpdateNotice::NOTICE_VERSION
+            );
 
-        /*
-         * Bound unconditionally rather than behind a has() check. has() is not a reliable "already
-         * bound" test: an auto-wiring container such as di52 answers true for any instantiable
-         * class, which would leave the notice unbound and let get() build a copy that has none of
-         * the caller's strings.
-         */
-        if (Config::hasContainer()) {
-            Config::getContainer()->singleton(CoreUpdateNotice::class, $notice);
+            return;
         }
 
-        $notice->register();
-
-        return $notice;
+        add_filter(CoreUpdateNotice::WINNER_FILTER, [$notice, 'selectWinner']);
+        add_action('admin_init', [$notice, 'handleDismissal']);
+        add_action('admin_notices', [$notice, 'render']);
     }
 }

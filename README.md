@@ -11,8 +11,7 @@ every plugin that displays it.
 * [Notes on examples](#notes-on-examples)
 * [Displaying the notice](#displaying-the-notice)
 * [Translations](#translations)
-* [Configuration](#configuration)
-  * [Service containers](#service-containers)
+* [Service containers](#service-containers)
 * [Dismissal](#dismissal)
 * [Choosing which plugin displays the notice](#choosing-which-plugin-displays-the-notice)
 * [Shared state](#shared-state)
@@ -57,9 +56,10 @@ whatever prefix you configure.
 One call, on `init`:
 
 ```php
+use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
-add_action( 'init', static fn() => Register::notice() );
+add_action( 'init', static fn() => Register::notice( new CoreUpdateNotice() ) );
 ```
 
 That hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown only to
@@ -71,47 +71,54 @@ The default copy is English and untranslated. Pass your own strings so they are 
 plugin's text domain:
 
 ```php
-Register::notice( [
-	'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'my-plugin' ),
-	'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'my-plugin' ),
-	'dismiss' => __( 'Dismiss this notice.', 'my-plugin' ),
-] );
+Register::notice(
+	new CoreUpdateNotice( [
+		'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'my-plugin' ),
+		'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'my-plugin' ),
+		'dismiss' => __( 'Dismiss this notice.', 'my-plugin' ),
+	] )
+);
 ```
 
 Any key you leave out falls back to the English default. Call this on `init`, when translations are
 loaded and before `admin_init` runs. Registration at or after `admin_init` is rejected because it
 would miss dismissal handling and could enter the winner contest too late.
 
-## Configuration
+## Service containers
 
-No configuration is required.
-
-### Service containers
-
-It is not required to use a service container with this library, however if you are using one and
-want it to fit within your system, you can connect your container, which **must** implement the
-`StellarWP\ContainerContract\ContainerInterface` interface.
+The package does not depend on a container. A project that uses one can let the container construct
+the notice, then pass that instance to the registration boundary:
 
 ```php
-use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Config;
+use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
-Config::setContainer( $container );
+$container->singleton( CoreUpdateNotice::class );
 
-Register::notice();
+add_action(
+	'init',
+	static fn() => Register::notice( $container->get( CoreUpdateNotice::class ) )
+);
 ```
 
-`Register::notice()` then binds the notice on your container as a singleton, so the rest of your
-plugin can resolve the same instance:
+Alternatively, construct the notice first and bind that same instance according to your container's
+API before registering it:
 
 ```php
-$container->get( StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\CoreUpdateNotice::class );
+add_action(
+	'init',
+	static function () use ( $container, $strings ): void {
+		$notice = new CoreUpdateNotice( $strings );
+
+		$container->singleton( CoreUpdateNotice::class, $notice );
+
+		Register::notice( $notice );
+	}
+);
 ```
 
-The binding is unconditional and overwrites any earlier one. It is deliberately not guarded behind
-`has()`: an auto-wiring container such as di52 answers `has()` true for any instantiable class, so a
-guarded binding would never run and the container would hand back an auto-wired copy carrying none
-of your strings.
+Container setup remains a responsibility of the consuming project; this package only requires a
+`CoreUpdateNotice` instance.
 
 ## Dismissal
 
@@ -128,9 +135,9 @@ first read, so an existing dismissal is honoured and re-arms on the next release
 
 ## Choosing which plugin displays the notice
 
-Every copy enters itself into a shared WordPress filter when `register()` runs. The filter selects
-the instance with the highest `CoreUpdateNotice::NOTICE_VERSION`, and that winner alone renders and
-handles dismissal. Plugin load order does not decide between different versions.
+Every copy enters its notice into a shared WordPress filter when `Register::notice()` runs. The
+filter selects the instance with the highest `CoreUpdateNotice::NOTICE_VERSION`, and that winner
+alone renders and handles dismissal. Plugin load order does not decide between different versions.
 
 So if Kadence Blocks and GiveWP both bundle the package and only GiveWP is updated to a release
 with a newer notice, GiveWP's copy takes over site-wide. The stale copies stand down without
