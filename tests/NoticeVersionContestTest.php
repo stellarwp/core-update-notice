@@ -8,6 +8,7 @@ use Brain\Monkey\Actions;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use Closure;
+use FrozenV1Plugin\StellarWP\CoreUpdateNotice\CoreUpdateNotice as FrozenV1Notice;
 use Mockery;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Register;
@@ -79,6 +80,22 @@ final class NoticeVersionContestTest extends TestCase
 
         $this->assertStringContainsString('FIRST PLUGIN', $this->render($first));
         $this->assertSame('', $this->render($second));
+    }
+
+    public function testCurrentCopyInteroperatesWithASeparatelyPrefixedFrozenV1Copy(): void
+    {
+        $current = new CoreUpdateNotice();
+        $frozenV1 = new FrozenV1Notice();
+
+        $winner = $frozenV1->selectWinner(null);
+        $winner = $current->selectWinner($winner);
+
+        $this->assertSame($frozenV1, $winner['notice']);
+
+        $winner = $current->selectWinner(null);
+        $winner = $frozenV1->selectWinner($winner);
+
+        $this->assertSame($current, $winner['notice']);
     }
 
     public function testInvalidCandidatesAreReplaced(): void
