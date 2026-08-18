@@ -1,176 +1,154 @@
-<?php
-
-declare(strict_types=1);
+<?php declare(strict_types=1);
 
 namespace StellarWP\CoreUpdateNotice\Tests;
 
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
-use Brain\Monkey\Actions;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\TerminatingNotice;
 
-final class CoreUpdateNoticeTest extends TestCase
-{
-    public function testDisplaysWhenACoreUpdateIsAvailable(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('upgrade');
+final class CoreUpdateNoticeTest extends TestCase {
 
-        $this->assertTrue((new CoreUpdateNotice())->shouldDisplay());
-    }
+	public function testDisplaysWhenACoreUpdateIsAvailable(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'upgrade' );
 
-    public function testDoesNotDisplayWhenCoreIsUpToDate(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('latest');
+		$this->assertTrue( (new CoreUpdateNotice())->shouldDisplay() );
+	}
 
-        $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
-    }
+	public function testDoesNotDisplayWhenCoreIsUpToDate(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'latest' );
 
-    public function testDoesNotDisplayWhenNoUpdateDataIsAvailable(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate(null);
+		$this->assertFalse( (new CoreUpdateNotice())->shouldDisplay() );
+	}
 
-        $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
-    }
+	public function testDoesNotDisplayWhenNoUpdateDataIsAvailable(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( null );
 
-    /**
-     * The flag is shared with the other plugins carrying this notice, so a value written by any of
-     * them suppresses it here as well.
-     */
-    public function testDoesNotDisplayOnceTheSharedDismissalFlagIsSet(): void
-    {
-        $this->stubDismissed(true);
-        $this->stubCoreUpdate('upgrade');
+		$this->assertFalse( (new CoreUpdateNotice())->shouldDisplay() );
+	}
 
-        $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
-    }
+	public function testDoesNotDisplayWhenTheOfferedVersionIsMissing(): void {
+		$this->stubDismissed( [] );
+		Functions\when( 'get_core_updates' )->justReturn( [ (object) [ 'response' => 'upgrade' ] ] );
 
-    public function testRendersTheCopyAndADismissLink(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('upgrade');
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('add_query_arg')->justReturn('/wp-admin/?' . CoreUpdateNotice::DISMISS_ACTION . '=1');
-        Functions\when('wp_nonce_url')->returnArg();
+		$this->assertFalse( (new CoreUpdateNotice())->shouldDisplay() );
+	}
 
-        $output = $this->render(new CoreUpdateNotice());
+	public function testRendersTheCopyAndADismissLink(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'upgrade' );
+		$this->stubRenderable();
 
-        $this->assertStringContainsString(
-            'Keep your site protected. Update to the latest version of WordPress.',
-            $output
-        );
-        $this->assertStringContainsString('notice-warning', $output);
-        $this->assertStringContainsString('is-dismissible', $output);
-        $this->assertStringContainsString(CoreUpdateNotice::DISMISS_ACTION, $output);
-    }
+		$notice = new CoreUpdateNotice();
+		$this->stubDisplayWinner( $notice );
 
-    public function testRendersNothingWithoutTheUpdateCoreCapability(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('upgrade');
-        Functions\when('current_user_can')->justReturn(false);
+		$output = $this->render( $notice );
 
-        $this->assertSame('', $this->render(new CoreUpdateNotice()));
-    }
+		$this->assertStringContainsString(
+			'Keep your site protected. Update to the latest version of WordPress.',
+			$output
+		);
+		$this->assertStringContainsString( 'notice-warning', $output );
+		$this->assertStringContainsString( 'is-dismissible', $output );
+		$this->assertStringContainsString( CoreUpdateNotice::DISMISS_ACTION, $output );
+	}
 
-    /**
-     * Two plugins bundling this package must not print the notice twice.
-     */
-    public function testRendersOnlyOncePerRequest(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('upgrade');
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('add_query_arg')->justReturn('/wp-admin/?dismiss=1');
-        Functions\when('wp_nonce_url')->returnArg();
+	public function testRendersNothingWithoutTheUpdateCoreCapability(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'upgrade' );
+		Functions\when( 'current_user_can' )->justReturn( false );
 
-        $this->assertNotSame('', $this->render(new CoreUpdateNotice()));
-        $this->assertSame('', $this->render(new CoreUpdateNotice()));
-    }
+		$notice = new CoreUpdateNotice();
+		$this->stubDisplayWinner( $notice );
 
-    public function testConsumerSuppliedCopyOverridesTheDefaults(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('upgrade');
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('add_query_arg')->justReturn('/wp-admin/?dismiss=1');
-        Functions\when('wp_nonce_url')->returnArg();
+		$this->assertSame( '', $this->render( $notice ) );
+	}
 
-        $output = $this->render(new CoreUpdateNotice(['heading' => 'Traduzido']));
+	public function testConsumerSuppliedCopyOverridesTheDefaults(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'upgrade' );
+		$this->stubRenderable();
 
-        $this->assertStringContainsString('Traduzido', $output);
-        $this->assertStringNotContainsString('Keep your site protected', $output);
-    }
+		$notice = new CoreUpdateNotice( [ 'heading' => 'Traduzido' ] );
+		$this->stubDisplayWinner( $notice );
 
-    public function testPartialCopyFallsBackToDefaultsForMissingKeys(): void
-    {
-        $this->stubDismissed(false);
-        $this->stubCoreUpdate('upgrade');
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('add_query_arg')->justReturn('/wp-admin/?dismiss=1');
-        Functions\when('wp_nonce_url')->returnArg();
+		$output = $this->render( $notice );
 
-        $output = $this->render(new CoreUpdateNotice(['heading' => 'Traduzido']));
+		$this->assertStringContainsString( 'Traduzido', $output );
+		$this->assertStringNotContainsString( 'Keep your site protected', $output );
+	}
 
-        $this->assertStringContainsString('outdated version of WordPress', $output);
-    }
+	public function testPartialCopyFallsBackToDefaultsForMissingKeys(): void {
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'upgrade' );
+		$this->stubRenderable();
 
-    public function testRegisterHooksAdminInitAndAdminNotices(): void
-    {
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
+		$notice = new CoreUpdateNotice( [ 'heading' => 'Traduzido' ] );
+		$this->stubDisplayWinner( $notice );
 
-        (new CoreUpdateNotice())->register();
-    }
+		$output = $this->render( $notice );
 
-    public function testDismissalIsIgnoredWithoutTheQueryArgument(): void
-    {
-        unset($_GET[CoreUpdateNotice::DISMISS_ACTION]);
+		$this->assertStringContainsString( 'outdated version of WordPress', $output );
+	}
 
-        Functions\expect('check_admin_referer')->never();
-        Functions\expect('update_option')->never();
+	public function testEscapesConsumerCopyAndTheDismissUrl(): void {
+		$copy       = [
+			'heading' => '<script>heading</script>',
+			'body'    => '<img src=x onerror=alert(1)>',
+			'dismiss' => '<svg onload=alert(1)>',
+		];
+		$dismissUrl = "https://example.test/wp-admin/?redirect='unsafe'&amp;"
+			. CoreUpdateNotice::DISMISS_ACTION . '=9.9';
 
-        (new CoreUpdateNotice())->handleDismissal();
-    }
+		$this->stubDismissed( [] );
+		$this->stubCoreUpdate( 'upgrade' );
+		Functions\when( 'current_user_can' )->justReturn( true );
+		Functions\when( 'add_query_arg' )->justReturn( $dismissUrl );
+		Functions\when( 'wp_nonce_url' )->returnArg();
 
-    public function testDismissalStoresTheSharedFlagNonAutoloaded(): void
-    {
-        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
+		$notice = new CoreUpdateNotice( $copy );
+		$this->stubDisplayWinner( $notice );
 
-        Functions\expect('check_admin_referer')
-            ->once()
-            ->with(CoreUpdateNotice::DISMISS_ACTION);
-        Functions\when('current_user_can')->justReturn(true);
-        Functions\when('remove_query_arg')->justReturn('/wp-admin/');
-        Functions\expect('update_option')
-            ->once()
-            ->with(CoreUpdateNotice::DISMISSED_OPTION, true, false);
-        Functions\expect('wp_safe_redirect')->once();
+		$output = $this->render( $notice );
 
-        $notice = new TerminatingNotice();
-        $notice->handleDismissal();
+		foreach ( $copy as $value ) {
+			$this->assertStringNotContainsString( $value, $output );
+			$this->assertStringContainsString( htmlspecialchars( $value, ENT_QUOTES, 'UTF-8' ), $output );
+		}
+		$this->assertStringNotContainsString( $dismissUrl, $output );
+		$this->assertStringContainsString(
+			"href=\"https://example.test/wp-admin/?redirect=&#039;unsafe&#039;&#038;"
+				. CoreUpdateNotice::DISMISS_ACTION . '=9.9"',
+			$output
+		);
+	}
 
-        $this->assertTrue($notice->terminated);
+	public function testDismissalIsIgnoredWithoutTheQueryArgument(): void {
+		Filters\expectApplied( CoreUpdateNotice::HANDLER_WINNER_FILTER )->never();
+		Functions\expect( 'check_admin_referer' )->never();
+		Functions\expect( 'update_option' )->never();
 
-        unset($_GET[CoreUpdateNotice::DISMISS_ACTION]);
-    }
+		(new CoreUpdateNotice())->handleDismissal();
+	}
 
-    public function testDismissalIsRefusedWithoutTheUpdateCoreCapability(): void
-    {
-        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
+	public function testDismissalIsRefusedWithoutTheUpdateCoreCapability(): void {
+		$_GET[ CoreUpdateNotice::DISMISS_ACTION ] = '6.8';
 
-        Functions\expect('check_admin_referer')->once();
-        Functions\when('current_user_can')->justReturn(false);
-        Functions\expect('update_option')->never();
-        Functions\expect('wp_safe_redirect')->never();
+		Functions\expect( 'check_admin_referer' )
+			->once()
+			->with( CoreUpdateNotice::DISMISS_ACTION . ':6.8' );
+		Functions\when( 'current_user_can' )->justReturn( false );
+		Functions\expect( 'update_option' )->never();
+		Functions\expect( 'wp_safe_redirect' )->never();
 
-        $notice = new TerminatingNotice();
-        $notice->handleDismissal();
+		$notice = new TerminatingNotice();
+		$this->stubHandlerWinner( $notice );
+		$notice->handleDismissal();
 
-        $this->assertFalse($notice->terminated);
+		$this->assertFalse( $notice->terminated );
+	}
 
-        unset($_GET[CoreUpdateNotice::DISMISS_ACTION]);
-    }
 }

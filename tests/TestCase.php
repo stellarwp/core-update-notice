@@ -1,73 +1,94 @@
-<?php
-
-declare(strict_types=1);
+<?php declare(strict_types=1);
 
 namespace StellarWP\CoreUpdateNotice\Tests;
 
 use Brain\Monkey;
-use Mockery;
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
+use Mockery;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
-use StellarWP\CoreUpdateNotice\Config;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 
-abstract class TestCase extends PHPUnitTestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
+abstract class TestCase extends PHPUnitTestCase {
 
-        Monkey\setUp();
+	protected function setUp(): void {
+		parent::setUp();
 
-        Config::reset();
-        unset($GLOBALS['nx_wp_core_update_notice_rendered']);
+		Monkey\setUp();
 
-        // Escaping and translation helpers behave as identity functions under test.
-        Functions\stubs([
-            'esc_html' => null,
-            'esc_url' => null,
-            'esc_attr' => null,
-        ]);
-    }
+		Functions\stubEscapeFunctions();
+	}
 
-    protected function tearDown(): void
-    {
-        Config::reset();
-        unset($GLOBALS['nx_wp_core_update_notice_rendered']);
+	protected function tearDown(): void {
+		unset( $_GET[ CoreUpdateNotice::DISMISS_ACTION ] );
 
-        // Brain\Monkey expectations are Mockery assertions; count them so tests that only assert
-        // through expectAdded()/expect() are not reported as risky.
-        if ($container = Mockery::getContainer()) {
-            $this->addToAssertionCount($container->mockery_getExpectationCount());
-        }
+		// Brain\Monkey expectations are Mockery assertions; count them so tests that only assert
+		// through expectAdded()/expect() are not reported as risky.
+		$container = Mockery::getContainer();
 
-        Monkey\tearDown();
+		if ( $container !== null ) {
+			$this->addToAssertionCount( $container->mockery_getExpectationCount() );
+		}
 
-        parent::tearDown();
-    }
+		Monkey\tearDown();
 
-    /**
-     * Stub the update_core read that CoreUpdateNotice performs.
-     *
-     * @param string|null $response The response WordPress reports, or null for no offer at all.
-     */
-    protected function stubCoreUpdate(?string $response): void
-    {
-        Functions\when('get_core_updates')->justReturn(
-            $response === null ? [] : [(object) ['response' => $response]]
-        );
-    }
+		parent::tearDown();
+	}
 
-    protected function stubDismissed(bool $dismissed): void
-    {
-        Functions\when('get_option')->justReturn($dismissed);
-    }
+	/**
+	 * Stub the update_core read that CoreUpdateNotice performs.
+	 *
+	 * @param string|null $response The response WordPress reports, or null for no offer at all.
+	 * @param string      $offered  The version being offered, WordPress calls it "current".
+	 */
+	protected function stubCoreUpdate( ?string $response, string $offered = '9.9' ): void {
+		Functions\when( 'get_core_updates' )->justReturn(
+			$response === null ? [] : [ (object) [ 'response' => $response, 'current' => $offered ] ]
+		);
+	}
 
-    protected function render(CoreUpdateNotice $notice): string
-    {
-        ob_start();
-        $notice->render();
+	/**
+	 * Stub the stored dismissal option.
+	 *
+	 * @param array<string, true> $value Exact dismissed versions, keyed by version.
+	 */
+	protected function stubDismissed( array $value ): void {
+		Functions\when( 'get_option' )->alias(
+			static function ( string $name, $default = false ) use ( $value ) {
+				return $name === CoreUpdateNotice::DISMISSED_OPTION ? $value : $default;
+			}
+		);
+	}
 
-        return (string) ob_get_clean();
-    }
+	/**
+	 * Stub everything the render path needs beyond the update and dismissal state.
+	 */
+	protected function stubRenderable(): void {
+		Functions\when( 'current_user_can' )->justReturn( true );
+		Functions\when( 'add_query_arg' )->justReturn( '/wp-admin/?' . CoreUpdateNotice::DISMISS_ACTION . '=1' );
+		Functions\when( 'wp_nonce_url' )->returnArg();
+	}
+
+	protected function stubDisplayWinner( CoreUpdateNotice $notice, int $times = 1 ): void {
+		$this->stubWinner( CoreUpdateNotice::DISPLAY_WINNER_FILTER, $notice, $times );
+	}
+
+	protected function stubHandlerWinner( CoreUpdateNotice $notice, int $times = 1 ): void {
+		$this->stubWinner( CoreUpdateNotice::HANDLER_WINNER_FILTER, $notice, $times );
+	}
+
+	private function stubWinner( string $filter, CoreUpdateNotice $notice, int $times ): void {
+		Filters\expectApplied( $filter )
+			->times( $times )
+			->with( null )
+			->andReturn( $notice->selectWinner( null ) );
+	}
+
+	protected function render( CoreUpdateNotice $notice ): string {
+		ob_start();
+		$notice->render();
+
+		return (string) ob_get_clean();
+	}
+
 }

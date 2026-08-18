@@ -5,9 +5,11 @@ namespace StellarWP\CoreUpdateNotice\Tests\Doubles;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 
 /**
- * exit cannot be intercepted, so the dismissal path records termination instead of performing it.
+ * Stands in for a plugin bundling a newer release of the package than its neighbours.
  */
-final class TerminatingNotice extends CoreUpdateNotice {
+final class NewerNotice extends CoreUpdateNotice {
+
+	public const NOTICE_VERSION = '99.0.0';
 
 	public bool $terminated = false;
 

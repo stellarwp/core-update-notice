@@ -1,6 +1,4 @@
-<?php
-
-declare(strict_types=1);
+<?php declare(strict_types=1);
 
 namespace StellarWP\CoreUpdateNotice;
 
@@ -11,175 +9,261 @@ namespace StellarWP\CoreUpdateNotice;
  * namespaces or constants being shared between plugins. The cross-plugin state is carried entirely
  * by string keys, which prefixing does not rewrite.
  */
-class CoreUpdateNotice
-{
-    /**
-     * Dismissal flag shared with the other plugins that display this notice, so a site running
-     * more than one of them only has to dismiss it once. Do not prefix it per plugin.
-     */
-    public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
+class CoreUpdateNotice {
 
-    /**
-     * The query argument and nonce action carried by the dismiss link. Shared, so whichever
-     * plugin's admin_init runs first stores the flag.
-     */
-    public const DISMISS_ACTION = 'nx-dismiss-wp-core-update-notice';
+	/**
+	 * Dismissal state shared with the other plugins that display this notice, so a site running
+	 * more than one of them only has to dismiss it once. Do not prefix it per plugin.
+	 *
+	 * Holds a set of exact WordPress versions dismissed on this site. A dismissal for one release
+	 * must not hide a different release, including a security update on an older release branch.
+	 */
+	public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
 
-    /**
-     * Global key marking that a copy of this notice has already rendered this request. A static
-     * property cannot do this job: each plugin prefixes the class, so each copy gets its own.
-     */
-    public const RENDER_GUARD = 'nx_wp_core_update_notice_rendered';
+	/**
+	 * The query argument and nonce action carried by the dismiss link. Shared so the elected copy
+	 * can handle a link rendered by any plugin carrying the package.
+	 */
+	public const DISMISS_ACTION = 'nx-dismiss-wp-core-update-notice';
 
-    /**
-     * The capability a user needs to see the notice and to dismiss it.
-     */
-    private const CAPABILITY = 'update_core';
+	/**
+	 * The version of the notice itself, independent of the package version. Bump it whenever the
+	 * notice's copy or behaviour changes.
+	 *
+	 * When several plugins bundle this package, the highest version registered on the request
+	 * handles dismissal. The highest version eligible for the current plugin page renders.
+	 */
+	public const NOTICE_VERSION = '1.0.0';
 
-    /**
-     * @var array<string, string>
-     */
-    private array $strings;
+	/**
+	 * Shared filter that elects one dismissal handler across every prefixed copy of the package.
+	 */
+	public const HANDLER_WINNER_FILTER = 'nx_wp_core_update_notice_winner';
 
-    /**
-     * @param array<string, string> $strings Optional translated copy, keyed heading, body and
-     *                                       dismiss. Supply this from the consuming plugin so the
-     *                                       strings land in its own text domain; the defaults are
-     *                                       English and untranslated. Missing keys fall back.
-     */
-    public function __construct(array $strings = [])
-    {
-        $defaults = [
-            'heading' => 'Keep your site protected. Update to the latest version of WordPress.',
-            'body' => 'Your site is running on an outdated version of WordPress, which can leave it'
-                . ' vulnerable to security issues. To decrease your risk of exposure, please update'
-                . ' your WordPress install to the latest version.',
-            'dismiss' => 'Dismiss this notice.',
-        ];
+	/**
+	 * Shared filter that elects one renderer from the copies eligible for the current plugin page.
+	 */
+	public const DISPLAY_WINNER_FILTER = 'nx_wp_core_update_notice_display_winner';
 
-        $this->strings = array_merge($defaults, array_filter($strings, 'is_string'));
-    }
+	/**
+	 * The capability a user needs to see the notice and to dismiss it.
+	 */
+	private const CAPABILITY = 'update_core';
 
-    /**
-     * Hook the notice into wp-admin.
-     */
-    public function register(): void
-    {
-        add_action('admin_init', [$this, 'handleDismissal']);
-        add_action('admin_notices', [$this, 'render']);
-    }
+	/**
+	 * @var array{heading: string, body: string, dismiss: string}
+	 */
+	private array $copy;
 
-    /**
-     * Store the shared dismissal flag when the notice's dismiss control is used.
-     *
-     * @hook admin_init
-     */
-    public function handleDismissal(): void
-    {
-        if (!isset($_GET[self::DISMISS_ACTION])) {
-            return;
-        }
+	/**
+	 * @param array{
+	 *     heading?: string,
+	 *     body?: string,
+	 *     dismiss?: string
+	 * } $copy Optional translated copy. Supply this from the consuming plugin so translations use
+	 *         its text domain. Missing keys use the English defaults.
+	 */
+	public function __construct( array $copy = [] ) {
+		$defaults = [
+			'heading' => 'Keep your site protected. Update to the latest version of WordPress.',
+			'body'    => 'Your site is running on an outdated version of WordPress, which can leave it'
+				. ' vulnerable to security issues. To decrease your risk of exposure, please update'
+				. ' your WordPress install to the latest version.',
+			'dismiss' => 'Dismiss this notice.',
+		];
 
-        check_admin_referer(self::DISMISS_ACTION);
+		$this->copy = array_merge( $defaults, array_filter( $copy, 'is_string' ) );
+	}
 
-        if (!current_user_can(self::CAPABILITY)) {
-            return;
-        }
+	/**
+	 * Add the offered version to the shared dismissal set when its dismiss control is used.
+	 *
+	 * @hook admin_init
+	 */
+	public function handleDismissal(): void {
+		$target = $_GET[ self::DISMISS_ACTION ] ?? null;
 
-        update_option(self::DISMISSED_OPTION, true, false);
+		if (
+			! is_string( $target )
+			|| strlen( $target ) > 32
+			|| preg_match( '/\A\d+(?:\.\d+)*(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?\z/', $target ) !== 1
+		) {
+			return;
+		}
 
-        wp_safe_redirect(remove_query_arg([self::DISMISS_ACTION, '_wpnonce']));
+		if ( ! $this->isWinnerFor( self::HANDLER_WINNER_FILTER ) ) {
+			return;
+		}
 
-        $this->terminate();
-    }
+		check_admin_referer( self::DISMISS_ACTION . ':' . $target );
 
-    /**
-     * Render the notice, at most once per request across every plugin that registers it.
-     *
-     * @hook admin_notices
-     */
-    public function render(): void
-    {
-        if (!empty($GLOBALS[self::RENDER_GUARD])) {
-            return;
-        }
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
 
-        if (!current_user_can(self::CAPABILITY) || !$this->shouldDisplay()) {
-            return;
-        }
+		$dismissed = get_option( self::DISMISSED_OPTION, [] );
 
-        $GLOBALS[self::RENDER_GUARD] = true;
+		if ( ! is_array( $dismissed ) ) {
+			$dismissed = [];
+		}
 
-        /*
-         * The dismiss control is a link so the shared flag can be stored server side, without a
-         * script. "is-dismissible" supplies the positioning context the control needs, and core's
-         * makeNoticesDismissible() skips notices that already carry a .notice-dismiss, so it does
-         * not append a second, non-persisting button.
-         */
-        printf(
-            '<div class="notice notice-warning is-dismissible"><p><strong>%1$s</strong></p><p>%2$s</p>'
-            . '<a href="%3$s" class="notice-dismiss" style="text-decoration:none;">'
-            . '<span class="screen-reader-text">%4$s</span></a></div>',
-            esc_html($this->strings['heading']),
-            esc_html($this->strings['body']),
-            esc_url($this->getDismissUrl()),
-            esc_html($this->strings['dismiss'])
-        );
-    }
+		if ( ! isset( $dismissed[ $target ] ) ) {
+			$dismissed[ $target ] = true;
+			update_option( self::DISMISSED_OPTION, $dismissed, false );
+		}
 
-    /**
-     * @return bool True while a core update is available and the notice has not been dismissed.
-     */
-    public function shouldDisplay(): bool
-    {
-        return !$this->isDismissed() && $this->isCoreUpdateAvailable();
-    }
+		wp_safe_redirect( remove_query_arg( [ self::DISMISS_ACTION, '_wpnonce' ] ) );
 
-    /**
-     * End the request after redirecting. Overridable so the dismissal path can be tested.
-     */
-    protected function terminate(): void
-    {
-        exit;
-    }
+		$this->terminate();
+	}
 
-    /**
-     * Whether the shared dismissal flag has been stored.
-     */
-    private function isDismissed(): bool
-    {
-        return (bool) get_option(self::DISMISSED_OPTION, false);
-    }
+	/**
+	 * Render the notice, at most once per request on an eligible plugin page.
+	 *
+	 * @hook admin_notices
+	 */
+	public function render(): void {
+		if ( ! $this->isWinnerFor( self::DISPLAY_WINNER_FILTER ) ) {
+			return;
+		}
 
-    /**
-     * Whether WordPress is offering a core update for the installed version.
-     */
-    private function isCoreUpdateAvailable(): bool
-    {
-        if (!function_exists('get_core_updates')) {
-            require_once ABSPATH . 'wp-admin/includes/update.php';
-        }
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
 
-        $updates = get_core_updates(['dismissed' => false]);
+		$offered = $this->displayTarget();
 
-        if (!is_array($updates) || $updates === []) {
-            return false;
-        }
+		if ( $offered === null ) {
+			return;
+		}
 
-        $update = $updates[0];
+		/*
+		 * The dismiss control is a link so the shared state can be stored server side, without a
+		 * script. "is-dismissible" supplies the positioning context the control needs, and core's
+		 * makeNoticesDismissible() skips notices that already carry a .notice-dismiss, so it does
+		 * not append a second, non-persisting button.
+		 */
+		printf(
+			'<div class="notice notice-warning is-dismissible"><p><strong>%1$s</strong></p><p>%2$s</p>'
+			. '<a href="%3$s" class="notice-dismiss" style="text-decoration:none;">'
+			. '<span class="screen-reader-text">%4$s</span></a></div>',
+			esc_html( $this->copy['heading'] ),
+			esc_html( $this->copy['body'] ),
+			esc_url( $this->getDismissUrl( $offered ) ),
+			esc_html( $this->copy['dismiss'] )
+		);
+	}
 
-        if (!is_object($update) || !isset($update->response)) {
-            return false;
-        }
+	/**
+	 * @return bool True while a core update is available that has not already been dismissed.
+	 */
+	public function shouldDisplay(): bool {
+		return $this->displayTarget() !== null;
+	}
 
-        return $update->response === 'upgrade';
-    }
+	/**
+	 * Keep the current winner unless this notice has a higher version.
+	 *
+	 * @param mixed $winner
+	 *
+	 * @return array{version: string, notice: object, ...}
+	 */
+	public function selectWinner( $winner ): array {
+		if (
+			is_array( $winner )
+			&& isset( $winner['version'], $winner['notice'] )
+			&& is_string( $winner['version'] )
+			&& $winner['version'] !== ''
+			&& is_object( $winner['notice'] )
+			&& version_compare( static::NOTICE_VERSION, $winner['version'], '<=' )
+		) {
+			return $winner;
+		}
 
-    /**
-     * The nonce-protected link that stores the shared dismissal flag.
-     */
-    private function getDismissUrl(): string
-    {
-        return (string) wp_nonce_url(add_query_arg(self::DISMISS_ACTION, '1'), self::DISMISS_ACTION);
-    }
+		return [
+			'version' => static::NOTICE_VERSION,
+			'notice'  => $this,
+		];
+	}
+
+	/**
+	 * Whether a shared winner filter selected this notice instance.
+	 *
+	 * @param non-empty-string $filter
+	 */
+	private function isWinnerFor( string $filter ): bool {
+		$winner = apply_filters( $filter, null );
+
+		return is_array( $winner )
+			   && ( $winner['version'] ?? null ) === static::NOTICE_VERSION
+			   && ( $winner['notice'] ?? null ) === $this;
+	}
+
+	/**
+	 * The offered version to display, or null when there is no undismissed update.
+	 */
+	private function displayTarget(): ?string {
+		$offered = $this->offeredVersion();
+
+		if ( $offered === null ) {
+			return null;
+		}
+
+		return $this->isDismissedFor( $offered ) ? null : $offered;
+	}
+
+	/**
+	 * End the request after redirecting. Overridable so the dismissal path can be tested.
+	 */
+	protected function terminate(): void {
+		exit;
+	}
+
+	/**
+	 * Whether the offered version has already been dismissed.
+	 *
+	 * Dismissals use exact version keys so one release cannot silence another release.
+	 */
+	private function isDismissedFor( string $offered ): bool {
+		$dismissed = get_option( self::DISMISSED_OPTION, [] );
+
+		return is_array( $dismissed ) && isset( $dismissed[ $offered ] );
+	}
+
+	/**
+	 * The WordPress version currently being offered, or null when the install is up to date.
+	 */
+	private function offeredVersion(): ?string {
+		if ( ! function_exists( 'get_core_updates' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/update.php';
+		}
+
+		$updates = get_core_updates( [ 'dismissed' => false ] );
+
+		if ( ! is_array( $updates ) || $updates === [] ) {
+			return null;
+		}
+
+		$update = $updates[0];
+
+		if ( ! is_object( $update ) || ! isset( $update->response ) || $update->response !== 'upgrade' ) {
+			return null;
+		}
+
+		// The offered release, not the installed one: get_core_updates() names it "current".
+		$version = isset( $update->current ) ? (string) $update->current : '';
+
+		return $version !== '' ? $version : null;
+	}
+
+	/**
+	 * The nonce-protected link that stores a dismissed version.
+	 */
+	private function getDismissUrl( string $offered ): string {
+		return (string) wp_nonce_url(
+			add_query_arg( self::DISMISS_ACTION, $offered ),
+			self::DISMISS_ACTION . ':' . $offered
+		);
+	}
+
 }
