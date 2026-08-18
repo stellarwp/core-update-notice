@@ -43,15 +43,15 @@ The repository is private, so add it as a VCS repository and require it:
 
 ## Notes on examples
 
-Since the recommendation is to use Strauss to prefix this library's namespaces, all examples will be
-using the `Boomshakalaka` namespace prefix.
+Since the recommendation is to use Strauss to prefix this library's namespaces, all examples use
+`StraussGeneratedNamespace` to stand in for whatever prefix you configure.
 
 ## Displaying the notice
 
 One call, on `init` or later:
 
 ```php
-use Boomshakalaka\StellarWP\CoreUpdateNotice\Register;
+use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
 add_action( 'init', function () {
 	Register::notice();
@@ -88,8 +88,8 @@ want it to fit within your system, you can connect your container, which **must*
 `StellarWP\ContainerContract\ContainerInterface` interface.
 
 ```php
-use Boomshakalaka\StellarWP\CoreUpdateNotice\Config;
-use Boomshakalaka\StellarWP\CoreUpdateNotice\Register;
+use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Config;
+use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
 Config::setContainer( $container );
 
@@ -100,7 +100,7 @@ Register::notice();
 plugin can resolve the same instance:
 
 ```php
-$container->get( Boomshakalaka\StellarWP\CoreUpdateNotice\CoreUpdateNotice::class );
+$container->get( StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\CoreUpdateNotice::class );
 ```
 
 The binding is unconditional and overwrites any earlier one. It is deliberately not guarded behind
