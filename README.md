@@ -1,12 +1,24 @@
-# Core Update Notice
+# StellarWP Core Update Notice
 
-A WordPress admin notice prompting site administrators to update WordPress while a core update is
-available. The dismissal flag is shared across every plugin that displays it, so a site running
-several of them only has to dismiss it once.
+[![CI](https://github.com/stellarwp/core-update-notice/workflows/CI/badge.svg)](https://github.com/stellarwp/core-update-notice/actions?query=branch%3Amain)
 
-## Install
+A WordPress admin notice prompting site administrators to update WordPress, dismissed once across
+every plugin that displays it.
 
-The repository is private, so add it as a VCS repository:
+## Table of contents
+
+* [Installation](#installation)
+* [Notes on examples](#notes-on-examples)
+* [Displaying the notice](#displaying-the-notice)
+* [Translations](#translations)
+* [Configuration](#configuration)
+  * [Service containers](#service-containers)
+* [Shared state](#shared-state)
+* [Development](#development)
+
+## Installation
+
+The repository is private, so add it as a VCS repository and require it:
 
 ```json
 {
@@ -22,57 +34,84 @@ The repository is private, so add it as a VCS repository:
 }
 ```
 
-## Usage
+> We _actually_ recommend that this library gets included in your project
+> using [Strauss](https://github.com/BrianHenryIE/strauss).
+>
+> Luckily, adding Strauss to your `composer.json` is only slightly more complicated than adding a
+> typical dependency, so checkout
+> our [strauss docs](https://github.com/stellarwp/global-docs/blob/main/docs/strauss-setup.md).
+
+## Notes on examples
+
+Since the recommendation is to use Strauss to prefix this library's namespaces, all examples will be
+using the `Boomshakalaka` namespace prefix.
+
+## Displaying the notice
+
+One call, on `init` or later:
 
 ```php
-use StellarWP\CoreUpdateNotice\Register;
+use Boomshakalaka\StellarWP\CoreUpdateNotice\Register;
 
-Register::notice();
+add_action( 'init', function () {
+	Register::notice();
+} );
 ```
 
-That hooks `admin_init` for dismissal and `admin_notices` for output. The notice renders only for
-users with the `update_core` capability, and only while WordPress reports an available core
-upgrade.
+That hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown only to
+users with the `update_core` capability, and only while WordPress reports an available core upgrade.
 
-### With a container
+## Translations
 
-Supply a `stellarwp/container-contract` container and the notice is bound there as a singleton, so
-the plugin can resolve the same instance elsewhere:
+The default copy is English and untranslated. Pass your own strings so they are extracted into your
+plugin's text domain:
 
 ```php
-use StellarWP\CoreUpdateNotice\Config;
-use StellarWP\CoreUpdateNotice\Register;
+Register::notice( [
+	'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'my-plugin' ),
+	'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'my-plugin' ),
+	'dismiss' => __( 'Dismiss this notice.', 'my-plugin' ),
+] );
+```
+
+Any key you leave out falls back to the English default. Call this at `init` or later, or the
+translations will not be loaded yet.
+
+## Configuration
+
+No configuration is required.
+
+### Service containers
+
+It is not required to use a service container with this library, however if you are using one and
+want it to fit within your system, you can connect your container, which **must** implement the
+`StellarWP\ContainerContract\ContainerInterface` interface.
+
+```php
+use Boomshakalaka\StellarWP\CoreUpdateNotice\Config;
+use Boomshakalaka\StellarWP\CoreUpdateNotice\Register;
 
 Config::setContainer( $container );
 
 Register::notice();
 ```
 
-`Register::notice()` always builds the notice from the strings you pass and binds that instance,
-overwriting any earlier binding. It deliberately does not check `has()` first: an auto-wiring
-container such as di52 answers `has()` true for any instantiable class, so a guarded binding would
-never run and the container would hand out an auto-wired copy carrying none of your strings.
-
-### Translations
-
-The default copy is English and untranslated. Pass your own strings so they land in the consuming
-plugin's text domain, where its POT file will pick them up:
+`Register::notice()` then binds the notice on your container as a singleton, so the rest of your
+plugin can resolve the same instance:
 
 ```php
-Register::notice( [
-	'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'your-plugin' ),
-	'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'your-plugin' ),
-	'dismiss' => __( 'Dismiss this notice.', 'your-plugin' ),
-] );
+$container->get( Boomshakalaka\StellarWP\CoreUpdateNotice\CoreUpdateNotice::class );
 ```
 
-Any key you leave out falls back to the English default. Call this at `init` or later, not before,
-or the translations will not be loaded yet.
+The binding is unconditional and overwrites any earlier one. It is deliberately not guarded behind
+`has()`: an auto-wiring container such as di52 answers `has()` true for any instantiable class, so a
+guarded binding would never run and the container would hand back an auto-wired copy carrying none
+of your strings.
 
-## Cross-plugin state
+## Shared state
 
-Consumers are expected to Strauss-prefix their copy, which rewrites namespaces and class names but
-not string literals. Everything shared between plugins is therefore a string key:
+Consumers prefix their own copy, which rewrites namespaces and class names but not string literals.
+Everything shared between plugins is therefore a string key:
 
 | Key | Purpose |
 | --- | --- |
@@ -83,8 +122,6 @@ not string literals. Everything shared between plugins is therefore a string key
 A static property cannot serve as the render guard: each prefixed copy is a distinct class with its
 own statics.
 
-## Implementation notes
-
 Dismissal is a nonce-protected link rather than the core dismiss button, which only removes the node
 client side. The notice carries `is-dismissible` because that rule supplies the `position: relative`
 and `padding-right: 48px` the absolutely positioned control needs, and core's
@@ -94,13 +131,11 @@ non-persisting button is appended. No script ships.
 On multisite, `update_option` writes per site while `update_core` is a network capability and the
 update transient is network wide, so the flag is per site.
 
-WordPress core's own `update_nag` carries the same information on the same screens.
-
 ## Development
 
 ```bash
 composer install
-composer check      # phpcs, then phpstan, then phpunit
+composer check
 ```
 
 | Command | What it runs |
@@ -108,13 +143,11 @@ composer check      # phpcs, then phpstan, then phpunit
 | `composer phpcs` | PSR-12 over `src` and `tests` |
 | `composer phpstan` | Level 8, `src` only |
 | `composer test` | PHPUnit |
+| `composer check` | All three, in that order |
 
-The suite uses Brain\Monkey to stub the WordPress functions the package calls, so it runs with
-nothing but Composer installed — no WordPress, no database, no containers.
+The suite uses [Brain\Monkey](https://github.com/Brain-WP/BrainMonkey) to stub the WordPress
+functions the package calls, so it runs with nothing but Composer installed. `exit` cannot be
+intercepted in a test, so `CoreUpdateNotice::terminate()` wraps it and the suite overrides that
+method.
 
-`exit` cannot be intercepted in a test, so `CoreUpdateNotice::terminate()` wraps it and the suite
-overrides that method to record termination instead.
-
-## Requirements
-
-PHP 7.4+. WordPress 6.6+ for the `makeNoticesDismissible()` behavior the dismiss control relies on.
+Requires PHP 7.4+ and WordPress 6.6+.
