@@ -25,14 +25,31 @@ The repository is private, so add it as a VCS repository:
 ## Usage
 
 ```php
-use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
+use StellarWP\CoreUpdateNotice\Register;
 
-( new CoreUpdateNotice() )->register();
+Register::notice();
 ```
 
-`register()` hooks `admin_init` for dismissal and `admin_notices` for output. The notice renders
-only for users with the `update_core` capability, and only while WordPress reports an available
-core upgrade.
+That hooks `admin_init` for dismissal and `admin_notices` for output. The notice renders only for
+users with the `update_core` capability, and only while WordPress reports an available core
+upgrade.
+
+### With a container
+
+Supply a `stellarwp/container-contract` container and the notice is bound there as a singleton and
+resolved from it, so the plugin gets the same instance the rest of its code resolves:
+
+```php
+use StellarWP\CoreUpdateNotice\Config;
+use StellarWP\CoreUpdateNotice\Register;
+
+Config::setContainer( $container );
+
+Register::notice();
+```
+
+If the plugin has already bound its own `CoreUpdateNotice` instance, `Register::notice()` uses that
+one instead of creating a second.
 
 ### Translations
 
@@ -40,14 +57,15 @@ The default copy is English and untranslated. Pass your own strings so they land
 plugin's text domain, where its POT file will pick them up:
 
 ```php
-new CoreUpdateNotice( [
+Register::notice( [
 	'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'your-plugin' ),
 	'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'your-plugin' ),
 	'dismiss' => __( 'Dismiss this notice.', 'your-plugin' ),
 ] );
 ```
 
-Any key you leave out falls back to the English default.
+Any key you leave out falls back to the English default. Call this at `init` or later, not before,
+or the translations will not be loaded yet.
 
 ## Cross-plugin state
 
@@ -75,6 +93,25 @@ On multisite, `update_option` writes per site while `update_core` is a network c
 update transient is network wide, so the flag is per site.
 
 WordPress core's own `update_nag` carries the same information on the same screens.
+
+## Development
+
+```bash
+composer install
+composer check      # phpcs, then phpstan, then phpunit
+```
+
+| Command | What it runs |
+| --- | --- |
+| `composer phpcs` | PSR-12 over `src` and `tests` |
+| `composer phpstan` | Level 8, `src` only |
+| `composer test` | PHPUnit |
+
+The suite uses Brain\Monkey to stub the WordPress functions the package calls, so it runs with
+nothing but Composer installed — no WordPress, no database, no containers.
+
+`exit` cannot be intercepted in a test, so `CoreUpdateNotice::terminate()` wraps it and the suite
+overrides that method to record termination instead.
 
 ## Requirements
 

@@ -8,10 +8,10 @@ namespace StellarWP\CoreUpdateNotice;
  * Prompts site administrators to update WordPress while the install is behind the latest release.
  *
  * Consumers Strauss-prefix their own copy of this class, so nothing here may rely on class names,
- * namespaces or constants being shared between plugins. The two pieces of cross-plugin state are
- * both string keys, which prefixing does not rewrite: the dismissal option and the render guard.
+ * namespaces or constants being shared between plugins. The cross-plugin state is carried entirely
+ * by string keys, which prefixing does not rewrite.
  */
-final class CoreUpdateNotice
+class CoreUpdateNotice
 {
     /**
      * Dismissal flag shared with the other plugins that display this notice, so a site running
@@ -29,7 +29,7 @@ final class CoreUpdateNotice
      * Global key marking that a copy of this notice has already rendered this request. A static
      * property cannot do this job: each plugin prefixes the class, so each copy gets its own.
      */
-    private const RENDER_GUARD = 'nx_wp_core_update_notice_rendered';
+    public const RENDER_GUARD = 'nx_wp_core_update_notice_rendered';
 
     /**
      * The capability a user needs to see the notice and to dismiss it.
@@ -37,25 +37,27 @@ final class CoreUpdateNotice
     private const CAPABILITY = 'update_core';
 
     /**
-     * @var array{heading: string, body: string, dismiss: string}
+     * @var array<string, string>
      */
     private $strings;
 
     /**
-     * @param array<string, string> $strings Optional translated copy. Supply this from the
-     *                                       consuming plugin so the strings land in its own text
-     *                                       domain; the defaults are English and untranslated.
+     * @param array<string, string> $strings Optional translated copy, keyed heading, body and
+     *                                       dismiss. Supply this from the consuming plugin so the
+     *                                       strings land in its own text domain; the defaults are
+     *                                       English and untranslated. Missing keys fall back.
      */
     public function __construct(array $strings = [])
     {
-        $this->strings = array_merge(
-            [
-                'heading' => 'Keep your site protected. Update to the latest version of WordPress.',
-                'body' => 'Your site is running on an outdated version of WordPress, which can leave it vulnerable to security issues. To decrease your risk of exposure, please update your WordPress install to the latest version.',
-                'dismiss' => 'Dismiss this notice.',
-            ],
-            array_filter($strings, 'is_string')
-        );
+        $defaults = [
+            'heading' => 'Keep your site protected. Update to the latest version of WordPress.',
+            'body' => 'Your site is running on an outdated version of WordPress, which can leave it'
+                . ' vulnerable to security issues. To decrease your risk of exposure, please update'
+                . ' your WordPress install to the latest version.',
+            'dismiss' => 'Dismiss this notice.',
+        ];
+
+        $this->strings = array_merge($defaults, array_filter($strings, 'is_string'));
     }
 
     /**
@@ -88,7 +90,7 @@ final class CoreUpdateNotice
 
         wp_safe_redirect(remove_query_arg([self::DISMISS_ACTION, '_wpnonce']));
 
-        exit;
+        $this->terminate();
     }
 
     /**
@@ -134,6 +136,14 @@ final class CoreUpdateNotice
     }
 
     /**
+     * End the request after redirecting. Overridable so the dismissal path can be tested.
+     */
+    protected function terminate(): void
+    {
+        exit;
+    }
+
+    /**
      * Whether the shared dismissal flag has been stored.
      */
     private function isDismissed(): bool
@@ -152,11 +162,17 @@ final class CoreUpdateNotice
 
         $updates = get_core_updates(['dismissed' => false]);
 
-        if (empty($updates) || !isset($updates[0]->response)) {
+        if (!is_array($updates) || $updates === []) {
             return false;
         }
 
-        return $updates[0]->response === 'upgrade';
+        $update = $updates[0];
+
+        if (!is_object($update) || !isset($update->response)) {
+            return false;
+        }
+
+        return $update->response === 'upgrade';
     }
 
     /**
@@ -164,6 +180,6 @@ final class CoreUpdateNotice
      */
     private function getDismissUrl(): string
     {
-        return wp_nonce_url(add_query_arg(self::DISMISS_ACTION, '1'), self::DISMISS_ACTION);
+        return (string) wp_nonce_url(add_query_arg(self::DISMISS_ACTION, '1'), self::DISMISS_ACTION);
     }
 }
