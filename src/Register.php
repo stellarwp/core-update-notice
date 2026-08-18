@@ -12,39 +12,27 @@ final class Register
     /**
      * Build the notice and hook it into wp-admin.
      *
-     * When a container has been supplied through {@see Config::setContainer()} the notice is
-     * registered as a singleton there and resolved from it, so the plugin gets the same instance
-     * its own code resolves. Without a container the notice is simply instantiated.
+     * When a container has been supplied through {@see Config::setContainer()} the notice is bound
+     * there as a singleton, so the plugin can resolve the same instance elsewhere.
      *
      * @param array<string, string> $strings Optional translated copy, see CoreUpdateNotice.
      */
     public static function notice(array $strings = []): CoreUpdateNotice
     {
-        $notice = self::resolve($strings);
+        $notice = new CoreUpdateNotice($strings);
+
+        /*
+         * Bound unconditionally rather than behind a has() check. has() is not a reliable "already
+         * bound" test: an auto-wiring container such as di52 answers true for any instantiable
+         * class, which would leave the notice unbound and let get() build a copy that has none of
+         * the caller's strings.
+         */
+        if (Config::hasContainer()) {
+            Config::getContainer()->singleton(CoreUpdateNotice::class, $notice);
+        }
 
         $notice->register();
 
         return $notice;
-    }
-
-    /**
-     * @param array<string, string> $strings
-     */
-    private static function resolve(array $strings): CoreUpdateNotice
-    {
-        if (!Config::hasContainer()) {
-            return new CoreUpdateNotice($strings);
-        }
-
-        $container = Config::getContainer();
-
-        if (!$container->has(CoreUpdateNotice::class)) {
-            $container->singleton(CoreUpdateNotice::class, new CoreUpdateNotice($strings));
-        }
-
-        $resolved = $container->get(CoreUpdateNotice::class);
-
-        // A container may hand back anything; only trust it when it is what we asked for.
-        return $resolved instanceof CoreUpdateNotice ? $resolved : new CoreUpdateNotice($strings);
     }
 }

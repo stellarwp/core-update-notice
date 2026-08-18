@@ -36,8 +36,8 @@ upgrade.
 
 ### With a container
 
-Supply a `stellarwp/container-contract` container and the notice is bound there as a singleton and
-resolved from it, so the plugin gets the same instance the rest of its code resolves:
+Supply a `stellarwp/container-contract` container and the notice is bound there as a singleton, so
+the plugin can resolve the same instance elsewhere:
 
 ```php
 use StellarWP\CoreUpdateNotice\Config;
@@ -48,8 +48,10 @@ Config::setContainer( $container );
 Register::notice();
 ```
 
-If the plugin has already bound its own `CoreUpdateNotice` instance, `Register::notice()` uses that
-one instead of creating a second.
+`Register::notice()` always builds the notice from the strings you pass and binds that instance,
+overwriting any earlier binding. It deliberately does not check `has()` first: an auto-wiring
+container such as di52 answers `has()` true for any instantiable class, so a guarded binding would
+never run and the container would hand out an auto-wired copy carrying none of your strings.
 
 ### Translations
 

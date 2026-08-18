@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace StellarWP\CoreUpdateNotice\Tests;
 
 use Brain\Monkey\Actions;
+use ReflectionProperty;
 use RuntimeException;
 use StellarWP\CoreUpdateNotice\Config;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Register;
+use StellarWP\CoreUpdateNotice\Tests\Doubles\AutowiringContainer;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\FakeContainer;
 
 final class RegisterTest extends TestCase
@@ -52,34 +54,52 @@ final class RegisterTest extends TestCase
     }
 
     /**
-     * A plugin that has already bound its own instance gets that one back, not a second one.
+     * di52 answers has() true for any instantiable class, so a has()-guarded binding would never
+     * run and the container would auto-wire a copy carrying none of the caller's strings.
      */
-    public function testItResolvesAnAlreadyBoundInstance(): void
+    public function testItBindsOnAnAutowiringContainerAndKeepsTheCallerStrings(): void
     {
         Actions\expectAdded('admin_init')->once();
         Actions\expectAdded('admin_notices')->once();
 
-        $existing = new CoreUpdateNotice(['heading' => 'Bound by the plugin']);
-
-        $container = new FakeContainer();
-        $container->singleton(CoreUpdateNotice::class, $existing);
+        $container = new AutowiringContainer();
         Config::setContainer($container);
 
-        $this->assertSame($existing, Register::notice());
+        $notice = Register::notice(['heading' => 'Traduzido']);
+
+        $this->assertSame($notice, $container->get(CoreUpdateNotice::class));
+        $this->assertSame('Traduzido', $this->headingOf($container->get(CoreUpdateNotice::class)));
+    }
+
+    public function testTheBoundInstanceIsStableAcrossResolutions(): void
+    {
+        Actions\expectAdded('admin_init')->once();
+        Actions\expectAdded('admin_notices')->once();
+
+        $container = new AutowiringContainer();
+        Config::setContainer($container);
+
+        Register::notice();
+
+        $this->assertSame(
+            $container->get(CoreUpdateNotice::class),
+            $container->get(CoreUpdateNotice::class)
+        );
     }
 
     /**
-     * A container that returns something unexpected must not produce a TypeError.
+     * @param mixed $notice
      */
-    public function testItFallsBackWhenTheContainerReturnsTheWrongType(): void
+    private function headingOf($notice): string
     {
-        Actions\expectAdded('admin_init')->once();
-        Actions\expectAdded('admin_notices')->once();
+        $this->assertInstanceOf(CoreUpdateNotice::class, $notice);
 
-        $container = new FakeContainer();
-        $container->singleton(CoreUpdateNotice::class, 'not a notice');
-        Config::setContainer($container);
+        $property = new ReflectionProperty(CoreUpdateNotice::class, 'strings');
+        $property->setAccessible(true);
 
-        $this->assertInstanceOf(CoreUpdateNotice::class, Register::notice());
+        /** @var array<string, string> $strings */
+        $strings = $property->getValue($notice);
+
+        return $strings['heading'];
     }
 }
