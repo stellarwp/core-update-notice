@@ -10,7 +10,7 @@
 		}
 	],
 	"require": {
-		"php": "^7.4 || ^8.0",
+		"php": ">=7.4",
 		"stellarwp/container-contract": "^1.1"
 	},
 	"require-dev": {
@@ -45,7 +45,7 @@
 	"config": {
 		"sort-packages": true,
 		"platform": {
-			"php": "7.4"
+			"php": "7.4.33"
 		},
 		"allow-plugins": {
 			"phpstan/extension-installer": true
