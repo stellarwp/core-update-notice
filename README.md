@@ -13,6 +13,8 @@ every plugin that displays it.
 * [Translations](#translations)
 * [Configuration](#configuration)
   * [Service containers](#service-containers)
+* [Dismissal](#dismissal)
+* [Choosing which plugin displays the notice](#choosing-which-plugin-displays-the-notice)
 * [Shared state](#shared-state)
 * [Development](#development)
 
@@ -110,6 +112,30 @@ The binding is unconditional and overwrites any earlier one. It is deliberately 
 guarded binding would never run and the container would hand back an auto-wired copy carrying none
 of your strings.
 
+## Dismissal
+
+Dismissal is recorded against the WordPress version it was dismissed for, not as a boolean. A site
+running 6.7 that dismisses the notice for 6.8 sees nothing more about 6.8, but the notice returns
+when 6.9 ships and the install is behind again.
+
+A flag written before dismissal was versioned is adopted for the offer current at the time it is
+first read, so an existing dismissal is honoured and re-arms on the next release.
+
+## Choosing which plugin displays the notice
+
+Every copy registers `CoreUpdateNotice::NOTICE_VERSION` when `register()` runs, and only the
+highest version registered on the request renders. Plugin load order does not decide it.
+
+So if Kadence Blocks and GiveWP both bundle the package and only GiveWP is updated to a release
+with a newer notice, GiveWP's copy takes over site-wide. The stale copies stand down without
+needing to be updated themselves.
+
+Equal versions fall back to whichever renders first, which the render guard settles.
+
+Bump `NOTICE_VERSION` whenever the notice's copy or behaviour changes. It is deliberately separate
+from the package version, so a release that only touches tooling does not reshuffle which plugin
+owns the notice.
+
 ## Shared state
 
 Each plugin prefixes its own copy, which rewrites namespaces and class names but not string
@@ -117,9 +143,10 @@ literals. Everything shared between plugins is therefore a string key:
 
 | Key | Purpose |
 | --- | --- |
-| `nx_wp_core_update_notice_dismissed` | Site option holding the dismissal flag. Non-autoloaded. |
+| `nx_wp_core_update_notice_dismissed` | Site option holding the WordPress version the notice was dismissed against. Non-autoloaded. |
 | `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action. Whichever plugin's `admin_init` runs first stores the flag. |
 | `nx_wp_core_update_notice_rendered` | Global marking that a copy already rendered this request, so two plugins do not print the notice twice. |
+| `nx_wp_core_update_notice_version` | Global holding the highest `NOTICE_VERSION` registered this request. Copies below it do not render. |
 
 A static property cannot serve as the render guard: each prefixed copy is a distinct class with its
 own statics.

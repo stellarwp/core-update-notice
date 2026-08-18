@@ -16,6 +16,9 @@ class CoreUpdateNotice
     /**
      * Dismissal flag shared with the other plugins that display this notice, so a site running
      * more than one of them only has to dismiss it once. Do not prefix it per plugin.
+     *
+     * Holds the WordPress version the notice was dismissed against, not a boolean: the notice has
+     * to come back when a later release leaves the site outdated again.
      */
     public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
 
@@ -24,6 +27,22 @@ class CoreUpdateNotice
      * plugin's admin_init runs first stores the flag.
      */
     public const DISMISS_ACTION = 'nx-dismiss-wp-core-update-notice';
+
+    /**
+     * The version of the notice itself, independent of the package version. Bump it whenever the
+     * notice's copy or behaviour changes.
+     *
+     * When several plugins bundle this package, the highest version registered on the request is
+     * the one that renders. A plugin that has been updated therefore controls the notice for the
+     * whole site, without waiting for the others to catch up.
+     */
+    public const NOTICE_VERSION = '1.0.0';
+
+    /**
+     * Global holding the highest notice version registered this request. Read with
+     * {@see self::registeredVersion()}.
+     */
+    public const VERSION_KEY = 'nx_wp_core_update_notice_version';
 
     /**
      * Global key marking that a copy of this notice has already rendered this request. A static
@@ -61,10 +80,12 @@ class CoreUpdateNotice
     }
 
     /**
-     * Hook the notice into wp-admin.
+     * Hook the notice into wp-admin and enter this copy into the version contest.
      */
     public function register(): void
     {
+        $this->claimVersion();
+
         add_action('admin_init', [$this, 'handleDismissal']);
         add_action('admin_notices', [$this, 'render']);
     }
@@ -86,7 +107,7 @@ class CoreUpdateNotice
             return;
         }
 
-        update_option(self::DISMISSED_OPTION, true, false);
+        update_option(self::DISMISSED_OPTION, $this->dismissalTarget(), false);
 
         wp_safe_redirect(remove_query_arg([self::DISMISS_ACTION, '_wpnonce']));
 
@@ -101,6 +122,10 @@ class CoreUpdateNotice
     public function render(): void
     {
         if (!empty($GLOBALS[self::RENDER_GUARD])) {
+            return;
+        }
+
+        if (!$this->isNewestRegistered()) {
             return;
         }
 
@@ -128,11 +153,35 @@ class CoreUpdateNotice
     }
 
     /**
-     * @return bool True while a core update is available and the notice has not been dismissed.
+     * @return bool True while a core update is available that has not already been dismissed.
      */
     public function shouldDisplay(): bool
     {
-        return !$this->isDismissed() && $this->isCoreUpdateAvailable();
+        $offered = $this->offeredVersion();
+
+        if ($offered === null) {
+            return false;
+        }
+
+        return !$this->isDismissedFor($offered);
+    }
+
+    /**
+     * Whether this copy is the highest-versioned one registered on this request.
+     *
+     * Every copy registers before `admin_notices` fires, so by render time the global holds the
+     * highest version on the site. Copies below it stand down; ties fall to whichever renders
+     * first, which the render guard then settles.
+     */
+    public function isNewestRegistered(): bool
+    {
+        $registered = $GLOBALS[self::VERSION_KEY] ?? null;
+
+        if (!is_string($registered) || $registered === '') {
+            return true;
+        }
+
+        return version_compare(static::NOTICE_VERSION, $registered, '>=');
     }
 
     /**
@@ -144,17 +193,67 @@ class CoreUpdateNotice
     }
 
     /**
-     * Whether the shared dismissal flag has been stored.
+     * Record this copy's notice version if it beats whatever another plugin already registered.
      */
-    private function isDismissed(): bool
+    private function claimVersion(): void
     {
-        return (bool) get_option(self::DISMISSED_OPTION, false);
+        $registered = $GLOBALS[self::VERSION_KEY] ?? null;
+
+        if (
+            !is_string($registered)
+            || $registered === ''
+            || version_compare(static::NOTICE_VERSION, $registered, '>')
+        ) {
+            $GLOBALS[self::VERSION_KEY] = static::NOTICE_VERSION;
+        }
     }
 
     /**
-     * Whether WordPress is offering a core update for the installed version.
+     * Whether the offered version has already been dismissed.
+     *
+     * The stored value is the WordPress version the notice was last dismissed against, so a later
+     * release brings it back rather than silencing it forever.
      */
-    private function isCoreUpdateAvailable(): bool
+    private function isDismissedFor(string $offered): bool
+    {
+        $stored = get_option(self::DISMISSED_OPTION, '');
+
+        if (is_string($stored) && $stored !== '' && $stored !== '1') {
+            return version_compare($stored, $offered, '>=');
+        }
+
+        if (!empty($stored)) {
+            /*
+             * A boolean flag written before dismissal was versioned. Adopt the current offer so the
+             * dismissal is honoured now and re-arms on the next release, rather than either
+             * reappearing immediately or never showing again.
+             */
+            update_option(self::DISMISSED_OPTION, $offered, false);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * The version to record when the notice is dismissed.
+     */
+    private function dismissalTarget(): string
+    {
+        $offered = $this->offeredVersion();
+
+        if ($offered !== null) {
+            return $offered;
+        }
+
+        return (string) get_bloginfo('version');
+    }
+
+    /**
+     * The WordPress version currently being offered, or null when the install is up to date.
+     */
+    private function offeredVersion(): ?string
     {
         if (!function_exists('get_core_updates')) {
             require_once ABSPATH . 'wp-admin/includes/update.php';
@@ -163,16 +262,19 @@ class CoreUpdateNotice
         $updates = get_core_updates(['dismissed' => false]);
 
         if (!is_array($updates) || $updates === []) {
-            return false;
+            return null;
         }
 
         $update = $updates[0];
 
-        if (!is_object($update) || !isset($update->response)) {
-            return false;
+        if (!is_object($update) || !isset($update->response) || $update->response !== 'upgrade') {
+            return null;
         }
 
-        return $update->response === 'upgrade';
+        // The offered release, not the installed one: get_core_updates() names it "current".
+        $version = isset($update->current) ? (string) $update->current : '';
+
+        return $version !== '' ? $version : null;
     }
 
     /**
