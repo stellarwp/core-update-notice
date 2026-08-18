@@ -99,7 +99,9 @@ class CoreUpdateNotice
      */
     public function handleDismissal(): void
     {
-        if (!isset($_GET[self::DISMISS_ACTION])) {
+        $target = $_GET[self::DISMISS_ACTION] ?? null;
+
+        if (!is_string($target) || $target === '') {
             return;
         }
 
@@ -107,13 +109,13 @@ class CoreUpdateNotice
             return;
         }
 
-        check_admin_referer(self::DISMISS_ACTION);
+        check_admin_referer(self::DISMISS_ACTION . ':' . $target);
 
         if (!current_user_can(self::CAPABILITY)) {
             return;
         }
 
-        update_option(self::DISMISSED_OPTION, $this->dismissalTarget(), false);
+        update_option(self::DISMISSED_OPTION, $target, false);
 
         wp_safe_redirect(remove_query_arg([self::DISMISS_ACTION, '_wpnonce']));
 
@@ -131,7 +133,13 @@ class CoreUpdateNotice
             return;
         }
 
-        if (!current_user_can(self::CAPABILITY) || !$this->shouldDisplay()) {
+        if (!current_user_can(self::CAPABILITY)) {
+            return;
+        }
+
+        $offered = $this->displayTarget();
+
+        if ($offered === null) {
             return;
         }
 
@@ -147,7 +155,7 @@ class CoreUpdateNotice
             . '<span class="screen-reader-text">%4$s</span></a></div>',
             esc_html($this->strings['heading']),
             esc_html($this->strings['body']),
-            esc_url($this->getDismissUrl()),
+            esc_url($this->getDismissUrl($offered)),
             esc_html($this->strings['dismiss'])
         );
     }
@@ -157,13 +165,21 @@ class CoreUpdateNotice
      */
     public function shouldDisplay(): bool
     {
+        return $this->displayTarget() !== null;
+    }
+
+    /**
+     * The offered version to display, or null when there is no undismissed update.
+     */
+    private function displayTarget(): ?string
+    {
         $offered = $this->offeredVersion();
 
         if ($offered === null) {
-            return false;
+            return null;
         }
 
-        return !$this->isDismissedFor($offered);
+        return $this->isDismissedFor($offered) ? null : $offered;
     }
 
     /**
@@ -241,20 +257,6 @@ class CoreUpdateNotice
     }
 
     /**
-     * The version to record when the notice is dismissed.
-     */
-    private function dismissalTarget(): string
-    {
-        $offered = $this->offeredVersion();
-
-        if ($offered !== null) {
-            return $offered;
-        }
-
-        return (string) get_bloginfo('version');
-    }
-
-    /**
      * The WordPress version currently being offered, or null when the install is up to date.
      */
     private function offeredVersion(): ?string
@@ -284,8 +286,11 @@ class CoreUpdateNotice
     /**
      * The nonce-protected link that stores the shared dismissal flag.
      */
-    private function getDismissUrl(): string
+    private function getDismissUrl(string $offered): string
     {
-        return (string) wp_nonce_url(add_query_arg(self::DISMISS_ACTION, '1'), self::DISMISS_ACTION);
+        return (string) wp_nonce_url(
+            add_query_arg(self::DISMISS_ACTION, $offered),
+            self::DISMISS_ACTION . ':' . $offered
+        );
     }
 }

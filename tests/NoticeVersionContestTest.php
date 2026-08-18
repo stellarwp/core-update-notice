@@ -119,7 +119,7 @@ final class NoticeVersionContestTest extends TestCase
 
     public function testALosingCopyDoesNotHandleDismissal(): void
     {
-        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '9.9';
 
         $older = new OlderNotice();
         $newer = new NewerNotice();
@@ -195,9 +195,11 @@ final class NoticeVersionContestTest extends TestCase
         $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $output);
         $this->assertStringNotContainsString('FROM THE OLD PLUGIN', $output);
 
-        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '9.9';
 
-        Functions\expect('check_admin_referer')->once()->with(CoreUpdateNotice::DISMISS_ACTION);
+        Functions\expect('check_admin_referer')
+            ->once()
+            ->with(CoreUpdateNotice::DISMISS_ACTION . ':9.9');
         Functions\when('remove_query_arg')->justReturn('/wp-admin/');
         Functions\expect('update_option')
             ->once()

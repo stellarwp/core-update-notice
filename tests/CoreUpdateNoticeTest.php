@@ -161,9 +161,11 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testDismissalIsRefusedWithoutTheUpdateCoreCapability(): void
     {
-        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '6.8';
 
-        Functions\expect('check_admin_referer')->once();
+        Functions\expect('check_admin_referer')
+            ->once()
+            ->with(CoreUpdateNotice::DISMISS_ACTION . ':6.8');
         Functions\when('current_user_can')->justReturn(false);
         Functions\expect('update_option')->never();
         Functions\expect('wp_safe_redirect')->never();

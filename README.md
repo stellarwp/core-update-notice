@@ -119,6 +119,10 @@ Dismissal is recorded against the WordPress version it was dismissed for, not as
 running 6.7 that dismisses the notice for 6.8 sees nothing more about 6.8, but the notice returns
 when 6.9 ships and the install is behind again.
 
+The dismiss link carries the offered version and its nonce is bound to that exact value. The handler
+stores the version the user saw instead of re-querying an offer that may have changed since the page
+was rendered.
+
 A flag written before dismissal was versioned is adopted for the offer current at the time it is
 first read, so an existing dismissal is honoured and re-arms on the next release.
 
@@ -146,7 +150,7 @@ literals. Everything shared between plugins is therefore a string key:
 | Key | Purpose |
 | --- | --- |
 | `nx_wp_core_update_notice_dismissed` | Site option holding the WordPress version the notice was dismissed against. Non-autoloaded. |
-| `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action. The elected plugin stores the version. |
+| `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action, bound to the rendered WordPress version. |
 | `nx_wp_core_update_notice_winner` | WordPress filter that elects one notice instance for the request. |
 
 The shared filter carries only a version string and object reference, so prefixed copies can
