@@ -150,7 +150,7 @@ final class NoticeVersionContestTest extends TestCase {
 	 * @param class-string<CoreUpdateNotice> $firstClass
 	 * @param class-string<CoreUpdateNotice> $secondClass
 	 */
-	public function testRegisteredCallbacksElectOneOwner(string $firstClass, string $secondClass): void {
+	public function testRegisteredCallbacksElectOneOwner( string $firstClass, string $secondClass ): void {
 		$filterCallbacks    = [];
 		$dismissalCallbacks = [];
 		$renderCallbacks    = [];
@@ -179,7 +179,7 @@ final class NoticeVersionContestTest extends TestCase {
 			->times( 4 )
 			->with( null )
 			->andReturnUsing(
-				static function ($winner) use (&$filterCallbacks) {
+				static function ( $winner ) use ( &$filterCallbacks ) {
 					foreach ( $filterCallbacks as $callback ) {
 						$winner = $callback( $winner );
 					}
@@ -237,8 +237,8 @@ final class NoticeVersionContestTest extends TestCase {
 	/**
 	 * @param array<int, callable> $callbacks
 	 */
-	private function captureCallback(array &$callbacks): Closure {
-		return static function (callable $callback) use (&$callbacks): bool {
+	private function captureCallback( array &$callbacks ): Closure {
+		return static function ( callable $callback ) use ( &$callbacks ): bool {
 			$callbacks[] = $callback;
 
 			return true;

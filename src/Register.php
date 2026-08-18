@@ -10,7 +10,7 @@ final class Register {
 	/**
 	 * Hook a notice instance into wp-admin and enter it into the version contest.
 	 */
-	public static function notice(CoreUpdateNotice $notice): void {
+	public static function notice( CoreUpdateNotice $notice ): void {
 		if ( did_action( 'admin_init' ) ) {
 			_doing_it_wrong(
 				__METHOD__,

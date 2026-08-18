@@ -18,4 +18,19 @@
 	<config name="minimum_supported_wp_version" value="6.6" />
 
 	<rule ref="Nexcess" />
+
+	<!-- The upstream standard only enforces spaces inside function calls, not declarations. -->
+	<rule ref="Squiz.Functions.FunctionDeclarationArgumentSpacing">
+		<properties>
+			<property name="equalsSpacing" value="1" />
+			<property name="requiredSpacesAfterOpen" value="1" />
+			<property name="requiredSpacesBeforeClose" value="1" />
+		</properties>
+	</rule>
+	<rule ref="Squiz.Functions.FunctionDeclarationArgumentSpacing.SpacingAfterOpen">
+		<severity>5</severity>
+	</rule>
+	<rule ref="Squiz.Functions.FunctionDeclarationArgumentSpacing.SpacingBeforeClose">
+		<severity>5</severity>
+	</rule>
 </ruleset>

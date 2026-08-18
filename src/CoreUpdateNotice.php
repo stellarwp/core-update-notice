@@ -59,7 +59,7 @@ class CoreUpdateNotice {
 	 * } $copy Optional translated copy. Supply this from the consuming plugin so translations use
 	 *         its text domain. Missing keys use the English defaults.
 	 */
-	public function __construct(array $copy = []) {
+	public function __construct( array $copy = [] ) {
 		$defaults = [
 			'heading' => 'Keep your site protected. Update to the latest version of WordPress.',
 			'body'    => 'Your site is running on an outdated version of WordPress, which can leave it'
@@ -151,7 +151,7 @@ class CoreUpdateNotice {
 	 *
 	 * @return array{version: string, notice: object, ...}
 	 */
-	public function selectWinner($winner): array {
+	public function selectWinner( $winner ): array {
 		if (
 			is_array( $winner )
 			&& isset( $winner['version'], $winner['notice'] )
@@ -206,7 +206,7 @@ class CoreUpdateNotice {
 	 * The stored value is the WordPress version the notice was last dismissed against, so a later
 	 * release brings it back rather than silencing it forever.
 	 */
-	private function isDismissedFor(string $offered): bool {
+	private function isDismissedFor( string $offered ): bool {
 		$stored = get_option( self::DISMISSED_OPTION, '' );
 
 		if ( is_string( $stored ) && $stored !== '' && $stored !== '1' ) {
@@ -256,7 +256,7 @@ class CoreUpdateNotice {
 	/**
 	 * The nonce-protected link that stores the shared dismissal flag.
 	 */
-	private function getDismissUrl(string $offered): string {
+	private function getDismissUrl( string $offered ): string {
 		return (string) wp_nonce_url(
 			add_query_arg( self::DISMISS_ACTION, $offered ),
 			self::DISMISS_ACTION . ':' . $offered

@@ -53,7 +53,7 @@ final class RegisterTest extends TestCase {
 		Functions\expect( '_doing_it_wrong' )->once();
 		Actions\expectDone( 'admin_init' )
 			->once()
-			->whenHappen(static function () use ($notice): void {
+			->whenHappen(static function () use ( $notice ): void {
 				Register::notice( $notice );
 			});
 

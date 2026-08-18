@@ -41,7 +41,7 @@ abstract class TestCase extends PHPUnitTestCase {
 	 * @param string|null $response The response WordPress reports, or null for no offer at all.
 	 * @param string      $offered  The version being offered, WordPress calls it "current".
 	 */
-	protected function stubCoreUpdate(?string $response, string $offered = '9.9'): void {
+	protected function stubCoreUpdate( ?string $response, string $offered = '9.9' ): void {
 		Functions\when( 'get_core_updates' )->justReturn(
 			$response === null ? [] : [ (object) [ 'response' => $response, 'current' => $offered ] ]
 		);
@@ -52,9 +52,9 @@ abstract class TestCase extends PHPUnitTestCase {
 	 *
 	 * @param mixed $value
 	 */
-	protected function stubDismissed($value): void {
+	protected function stubDismissed( $value ): void {
 		Functions\when( 'get_option' )->alias(
-			static function (string $name, $default = false) use ($value) {
+			static function ( string $name, $default = false ) use ( $value ) {
 				return $name === CoreUpdateNotice::DISMISSED_OPTION ? $value : $default;
 			}
 		);
@@ -69,14 +69,14 @@ abstract class TestCase extends PHPUnitTestCase {
 		Functions\when( 'wp_nonce_url' )->returnArg();
 	}
 
-	protected function stubWinner(CoreUpdateNotice $notice, int $times = 1): void {
+	protected function stubWinner( CoreUpdateNotice $notice, int $times = 1 ): void {
 		Filters\expectApplied( CoreUpdateNotice::WINNER_FILTER )
 			->times( $times )
 			->with( null )
 			->andReturn( $notice->selectWinner( null ) );
 	}
 
-	protected function render(CoreUpdateNotice $notice): string {
+	protected function render( CoreUpdateNotice $notice ): string {
 		ob_start();
 		$notice->render();
 

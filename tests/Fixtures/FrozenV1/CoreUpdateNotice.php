@@ -17,7 +17,7 @@ final class CoreUpdateNotice {
 	 *
 	 * @return array{version: string, notice: object, ...}
 	 */
-	public function selectWinner($winner): array {
+	public function selectWinner( $winner ): array {
 		if (
 			is_array( $winner )
 			&& isset( $winner['version'], $winner['notice'] )
