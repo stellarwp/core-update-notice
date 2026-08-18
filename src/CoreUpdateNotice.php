@@ -14,17 +14,23 @@ namespace StellarWP\CoreUpdateNotice;
 class CoreUpdateNotice
 {
     /**
-     * Dismissal flag shared with the other plugins that display this notice, so a site running
+     * Dismissal record shared with the other plugins that display this notice, so a site running
      * more than one of them only has to dismiss it once. Do not prefix it per plugin.
      *
-     * Holds the WordPress version the notice was dismissed against, not a boolean: the notice has
-     * to come back when a later release leaves the site outdated again.
+     * Holds a set keyed "{version}|{locale}", the same shape WordPress uses for
+     * `dismissed_update_core`. A set rather than a single version because dismissing one offer must
+     * not silence a different one: an admin who dismisses 6.9 still needs to be told about a 6.8.1
+     * security release.
+     *
+     * Stored with the site option API, so one dismissal covers a whole multisite network. On single
+     * site that falls through to update_option() with autoload disabled.
      */
     public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
 
     /**
      * The query argument and nonce action carried by the dismiss link. Shared, so whichever
-     * plugin's admin_init runs first stores the flag.
+     * plugin's admin_init runs first stores the dismissal. The argument's value is the offer key
+     * being dismissed.
      */
     public const DISMISS_ACTION = 'nx-dismiss-wp-core-update-notice';
 
@@ -40,7 +46,7 @@ class CoreUpdateNotice
 
     /**
      * Global holding the highest notice version registered this request. Read with
-     * {@see self::registeredVersion()}.
+     * {@see self::isNewestRegistered()}.
      */
     public const VERSION_KEY = 'nx_wp_core_update_notice_version';
 
@@ -81,6 +87,10 @@ class CoreUpdateNotice
 
     /**
      * Hook the notice into wp-admin and enter this copy into the version contest.
+     *
+     * Call this on `init` or `admin_init`, never from inside `admin_notices`: a copy registering
+     * once that hook is already running can claim the contest without its own callback being
+     * reached, which suppresses the notice for the request.
      */
     public function register(): void
     {
@@ -88,10 +98,13 @@ class CoreUpdateNotice
 
         add_action('admin_init', [$this, 'handleDismissal']);
         add_action('admin_notices', [$this, 'render']);
+
+        // Multisite puts update-core.php behind the network admin, which admin_notices never reaches.
+        add_action('network_admin_notices', [$this, 'render']);
     }
 
     /**
-     * Store the shared dismissal flag when the notice's dismiss control is used.
+     * Record the dismissal when the notice's dismiss control is used.
      *
      * @hook admin_init
      */
@@ -107,7 +120,14 @@ class CoreUpdateNotice
             return;
         }
 
-        update_option(self::DISMISSED_OPTION, $this->dismissalTarget(), false);
+        $key = $this->dismissalKeyFromRequest();
+
+        if ($key !== null) {
+            $dismissed = $this->dismissedOffers();
+            $dismissed[$key] = true;
+
+            update_site_option(self::DISMISSED_OPTION, $dismissed);
+        }
 
         wp_safe_redirect(remove_query_arg([self::DISMISS_ACTION, '_wpnonce']));
 
@@ -118,6 +138,7 @@ class CoreUpdateNotice
      * Render the notice, at most once per request across every plugin that registers it.
      *
      * @hook admin_notices
+     * @hook network_admin_notices
      */
     public function render(): void
     {
@@ -129,14 +150,20 @@ class CoreUpdateNotice
             return;
         }
 
-        if (!current_user_can(self::CAPABILITY) || !$this->shouldDisplay()) {
+        if (!current_user_can(self::CAPABILITY)) {
+            return;
+        }
+
+        $offer = $this->currentOffer();
+
+        if ($offer === null || $this->isDismissed($offer)) {
             return;
         }
 
         $GLOBALS[self::RENDER_GUARD] = true;
 
         /*
-         * The dismiss control is a link so the shared flag can be stored server side, without a
+         * The dismiss control is a link so the shared record can be stored server side, without a
          * script. "is-dismissible" supplies the positioning context the control needs, and core's
          * makeNoticesDismissible() skips notices that already carry a .notice-dismiss, so it does
          * not append a second, non-persisting button.
@@ -147,23 +174,23 @@ class CoreUpdateNotice
             . '<span class="screen-reader-text">%4$s</span></a></div>',
             esc_html($this->strings['heading']),
             esc_html($this->strings['body']),
-            esc_url($this->getDismissUrl()),
+            esc_url($this->getDismissUrl($this->offerKey($offer))),
             esc_html($this->strings['dismiss'])
         );
     }
 
     /**
-     * @return bool True while a core update is available that has not already been dismissed.
+     * @return bool True while an offer is available that has not already been dismissed.
      */
     public function shouldDisplay(): bool
     {
-        $offered = $this->offeredVersion();
+        $offer = $this->currentOffer();
 
-        if ($offered === null) {
+        if ($offer === null) {
             return false;
         }
 
-        return !$this->isDismissedFor($offered);
+        return !$this->isDismissed($offer);
     }
 
     /**
@@ -209,51 +236,62 @@ class CoreUpdateNotice
     }
 
     /**
-     * Whether the offered version has already been dismissed.
+     * The offer key the dismiss link carries, or the current offer when the link did not name one.
      *
-     * The stored value is the WordPress version the notice was last dismissed against, so a later
-     * release brings it back rather than silencing it forever.
+     * The key travels in the URL so the dismissal records exactly what the user was shown, rather
+     * than whatever the update transient happens to hold a request later.
      */
-    private function isDismissedFor(string $offered): bool
+    private function dismissalKeyFromRequest(): ?string
     {
-        $stored = get_option(self::DISMISSED_OPTION, '');
+        $raw = $_GET[self::DISMISS_ACTION];
 
-        if (is_string($stored) && $stored !== '' && $stored !== '1') {
-            return version_compare($stored, $offered, '>=');
+        if (is_string($raw) && $raw !== '') {
+            $candidate = sanitize_text_field(wp_unslash($raw));
+
+            if (preg_match('/^[A-Za-z0-9._+-]{1,32}\|[A-Za-z0-9_-]{1,32}$/', $candidate) === 1) {
+                return $candidate;
+            }
         }
 
-        if (!empty($stored)) {
-            /*
-             * A boolean flag written before dismissal was versioned. Adopt the current offer so the
-             * dismissal is honoured now and re-arms on the next release, rather than either
-             * reappearing immediately or never showing again.
-             */
-            update_option(self::DISMISSED_OPTION, $offered, false);
+        $offer = $this->currentOffer();
 
-            return true;
-        }
-
-        return false;
+        return $offer === null ? null : $this->offerKey($offer);
     }
 
     /**
-     * The version to record when the notice is dismissed.
+     * @param array{version: string, locale: string} $offer
      */
-    private function dismissalTarget(): string
+    private function isDismissed(array $offer): bool
     {
-        $offered = $this->offeredVersion();
-
-        if ($offered !== null) {
-            return $offered;
-        }
-
-        return (string) get_bloginfo('version');
+        return array_key_exists($this->offerKey($offer), $this->dismissedOffers());
     }
 
     /**
-     * The WordPress version currently being offered, or null when the install is up to date.
+     * The offers already dismissed, keyed "{version}|{locale}".
+     *
+     * @return array<string, mixed>
      */
-    private function offeredVersion(): ?string
+    private function dismissedOffers(): array
+    {
+        $dismissed = get_site_option(self::DISMISSED_OPTION, []);
+
+        return is_array($dismissed) ? $dismissed : [];
+    }
+
+    /**
+     * @param array{version: string, locale: string} $offer
+     */
+    private function offerKey(array $offer): string
+    {
+        return $offer['version'] . '|' . $offer['locale'];
+    }
+
+    /**
+     * The update WordPress is currently offering, or null when the install is up to date.
+     *
+     * @return array{version: string, locale: string}|null
+     */
+    private function currentOffer(): ?array
     {
         if (!function_exists('get_core_updates')) {
             require_once ABSPATH . 'wp-admin/includes/update.php';
@@ -272,16 +310,25 @@ class CoreUpdateNotice
         }
 
         // The offered release, not the installed one: get_core_updates() names it "current".
-        $version = isset($update->current) ? (string) $update->current : '';
+        $version = isset($update->current) && is_string($update->current) ? $update->current : '';
 
-        return $version !== '' ? $version : null;
+        if ($version === '') {
+            return null;
+        }
+
+        $locale = isset($update->locale) && is_string($update->locale) ? $update->locale : 'en_US';
+
+        return ['version' => $version, 'locale' => $locale];
     }
 
     /**
-     * The nonce-protected link that stores the shared dismissal flag.
+     * The nonce-protected link that records the dismissal, carrying the offer it applies to.
      */
-    private function getDismissUrl(): string
+    private function getDismissUrl(string $key): string
     {
-        return (string) wp_nonce_url(add_query_arg(self::DISMISS_ACTION, '1'), self::DISMISS_ACTION);
+        return (string) wp_nonce_url(
+            add_query_arg(self::DISMISS_ACTION, rawurlencode($key)),
+            self::DISMISS_ACTION
+        );
     }
 }

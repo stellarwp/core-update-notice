@@ -62,7 +62,8 @@ use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 add_action( 'init', static fn() => Register::notice() );
 ```
 
-That hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown only to
+That hooks `admin_init` for dismissal, and both `admin_notices` and `network_admin_notices` for
+output. The notice is shown only to
 users with the `update_core` capability, and only while WordPress reports an available core upgrade.
 
 ## Translations
@@ -114,12 +115,19 @@ of your strings.
 
 ## Dismissal
 
-Dismissal is recorded against the WordPress version it was dismissed for, not as a boolean. A site
-running 6.7 that dismisses the notice for 6.8 sees nothing more about 6.8, but the notice returns
-when 6.9 ships and the install is behind again.
+Dismissal records the specific offer it applied to, as a set keyed `"{version}|{locale}"` — the
+same shape WordPress uses for its own `dismissed_update_core`. Dismiss 6.9 and 6.9 stays quiet,
+while a later 6.8.1 security release still gets through. A single stored version could not express
+that, and would have silenced exactly the releases this notice exists to surface.
 
-A flag written before dismissal was versioned is adopted for the offer current at the time it is
-first read, so an existing dismissal is honoured and re-arms on the next release.
+The offer key travels in the dismiss link, so the dismissal records what the user was actually
+shown rather than whatever the update transient holds by the time the click lands.
+
+Storage uses the site option API, so one dismissal covers a whole multisite network instead of
+being repeated on every subsite. On single site that falls through to `update_option()` with
+autoload disabled.
+
+Nothing is written while merely deciding whether to display; only the dismiss handler writes.
 
 ## Choosing which plugin displays the notice
 
@@ -127,10 +135,17 @@ Every copy registers `CoreUpdateNotice::NOTICE_VERSION` when `register()` runs, 
 highest version registered on the request renders. Plugin load order does not decide it.
 
 So if Kadence Blocks and GiveWP both bundle the package and only GiveWP is updated to a release
-with a newer notice, GiveWP's copy takes over site-wide. The stale copies stand down without
-needing to be updated themselves.
+with a newer notice, GiveWP's copy takes over site-wide.
+
+This works between copies at this release or later. A copy predating it does not read the version
+global at all and renders on the guard alone, so against those the winner is still whichever
+`admin_notices` callback runs first.
 
 Equal versions fall back to whichever renders first, which the render guard settles.
+
+Call `Register::notice()` on `init` or `admin_init`, never from inside an `admin_notices` callback.
+A copy registering once that hook is already running claims the contest without its own callback
+being reached, which suppresses the notice for that request.
 
 Bump `NOTICE_VERSION` whenever the notice's copy or behaviour changes. It is deliberately separate
 from the package version, so a release that only touches tooling does not reshuffle which plugin
@@ -143,7 +158,7 @@ literals. Everything shared between plugins is therefore a string key:
 
 | Key | Purpose |
 | --- | --- |
-| `nx_wp_core_update_notice_dismissed` | Site option holding the WordPress version the notice was dismissed against. Non-autoloaded. |
+| `nx_wp_core_update_notice_dismissed` | Network-wide site option holding the set of dismissed offers, keyed `"{version}\|{locale}"`. Non-autoloaded. |
 | `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action. Whichever plugin's `admin_init` runs first stores the flag. |
 | `nx_wp_core_update_notice_rendered` | Global marking that a copy already rendered this request, so two plugins do not print the notice twice. |
 | `nx_wp_core_update_notice_version` | Global holding the highest `NOTICE_VERSION` registered this request. Copies below it do not render. |
@@ -157,8 +172,9 @@ and `padding-right: 48px` the absolutely positioned control needs, and core's
 `makeNoticesDismissible()` skips notices that already contain a `.notice-dismiss`, so no second,
 non-persisting button is appended. No script ships.
 
-On multisite, `update_option` writes per site while `update_core` is a network capability and the
-update transient is network wide, so the flag is per site.
+On multisite, `update_core` is a super-admin capability and the update transient is network wide,
+so the dismissal is stored network wide to match. The notice is hooked into the network admin as
+well, which is where `update-core.php` lives for a super admin.
 
 ## Development
 

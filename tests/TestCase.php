@@ -22,11 +22,13 @@ abstract class TestCase extends PHPUnitTestCase
         Config::reset();
         $this->resetGlobals();
 
-        // Escaping helpers behave as identity functions under test.
+        // Escaping and sanitising helpers behave as identity functions under test.
         Functions\stubs([
             'esc_html' => null,
             'esc_url' => null,
             'esc_attr' => null,
+            'sanitize_text_field' => null,
+            'wp_unslash' => null,
         ]);
     }
 
@@ -58,25 +60,64 @@ abstract class TestCase extends PHPUnitTestCase
      * @param string|null $response The response WordPress reports, or null for no offer at all.
      * @param string      $offered  The version being offered, WordPress calls it "current".
      */
-    protected function stubCoreUpdate(?string $response, string $offered = '9.9'): void
-    {
+    protected function stubCoreUpdate(
+        ?string $response,
+        string $offered = '9.9',
+        string $locale = 'en_US'
+    ): void {
         Functions\when('get_core_updates')->justReturn(
-            $response === null ? [] : [(object) ['response' => $response, 'current' => $offered]]
+            $response === null
+                ? []
+                : [(object) ['response' => $response, 'current' => $offered, 'locale' => $locale]]
         );
     }
 
     /**
-     * Stub the stored dismissal option. Pass '' for never dismissed.
+     * Stub the stored dismissal record. Pass the offer keys already dismissed.
      *
-     * @param mixed $value
+     * @param string[] $keys
      */
-    protected function stubDismissed($value): void
+    protected function stubDismissed(array $keys = []): void
     {
-        Functions\when('get_option')->alias(
-            static function (string $name, $default = false) use ($value) {
-                return $name === CoreUpdateNotice::DISMISSED_OPTION ? $value : $default;
+        $stored = $keys === [] ? [] : array_fill_keys($keys, true);
+
+        Functions\when('get_site_option')->alias(
+            static function (string $name, $default = false) use ($stored) {
+                return $name === CoreUpdateNotice::DISMISSED_OPTION ? $stored : $default;
             }
         );
+    }
+
+    /**
+     * Back the dismissal option with a real store, so a write is visible to the next read.
+     *
+     * @param string[] $keys
+     *
+     * @return array<string, mixed> The live store, by reference through the closure.
+     */
+    protected function stubDismissedStore(array $keys = []): \ArrayObject
+    {
+        $store = new \ArrayObject($keys === [] ? [] : array_fill_keys($keys, true));
+
+        Functions\when('get_site_option')->alias(
+            static function (string $name, $default = false) use ($store) {
+                return $name === CoreUpdateNotice::DISMISSED_OPTION
+                    ? $store->getArrayCopy()
+                    : $default;
+            }
+        );
+
+        Functions\when('update_site_option')->alias(
+            static function (string $name, $value) use ($store): bool {
+                if ($name === CoreUpdateNotice::DISMISSED_OPTION && is_array($value)) {
+                    $store->exchangeArray($value);
+                }
+
+                return true;
+            }
+        );
+
+        return $store;
     }
 
     /**

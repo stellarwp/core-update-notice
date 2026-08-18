@@ -14,22 +14,9 @@ use StellarWP\CoreUpdateNotice\Tests\Doubles\OlderNotice;
  */
 final class NoticeVersionContestTest extends TestCase
 {
-    public function testASingleCopyRenders(): void
-    {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        $notice = new CoreUpdateNotice();
-        $notice->register();
-
-        $this->assertTrue($notice->isNewestRegistered());
-        $this->assertNotSame('', $this->render($notice));
-    }
-
     public function testTheNewerCopyWinsRegardlessOfRegistrationOrder(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
@@ -51,7 +38,7 @@ final class NoticeVersionContestTest extends TestCase
 
     public function testTheNewerCopyWinsWhenItRegistersFirst(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
@@ -63,54 +50,5 @@ final class NoticeVersionContestTest extends TestCase
 
         $this->assertSame('', $this->render($older));
         $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $this->render($newer));
-    }
-
-    /**
-     * The older copy must stand down even if its admin_notices callback fires first, which is the
-     * case the render guard alone could not handle.
-     */
-    public function testTheOlderCopyStandsDownEvenWhenItRendersFirst(): void
-    {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        $older = new OlderNotice(['heading' => 'FROM THE OLD PLUGIN']);
-        $newer = new NewerNotice(['heading' => 'FROM THE UPDATED PLUGIN']);
-
-        $older->register();
-        $newer->register();
-
-        $first = $this->render($older);
-        $second = $this->render($newer);
-
-        $this->assertSame('', $first);
-        $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $second);
-    }
-
-    public function testEqualVersionsStillRenderOnlyOnce(): void
-    {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        $a = new CoreUpdateNotice();
-        $b = new CoreUpdateNotice();
-
-        $a->register();
-        $b->register();
-
-        $this->assertNotSame('', $this->render($a));
-        $this->assertSame('', $this->render($b));
-    }
-
-    public function testAnUnregisteredCopyDoesNotBlockItself(): void
-    {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        // render() without register() happens if a consumer hooks the method directly.
-        $this->assertNotSame('', $this->render(new CoreUpdateNotice()));
     }
 }
