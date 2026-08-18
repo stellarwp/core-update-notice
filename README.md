@@ -54,7 +54,7 @@ whatever prefix you configure.
 
 ## Displaying the notice
 
-One call, on `init` or later:
+One call, on `init`:
 
 ```php
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
@@ -78,8 +78,9 @@ Register::notice( [
 ] );
 ```
 
-Any key you leave out falls back to the English default. Call this at `init` or later, or the
-translations will not be loaded yet.
+Any key you leave out falls back to the English default. Call this on `init`, when translations are
+loaded and before `admin_init` runs. Registration at or after `admin_init` is rejected because it
+would miss dismissal handling and could enter the winner contest too late.
 
 ## Configuration
 

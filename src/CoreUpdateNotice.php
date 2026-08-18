@@ -77,6 +77,16 @@ class CoreUpdateNotice
      */
     public function register(): void
     {
+        if (did_action('admin_init')) {
+            _doing_it_wrong(
+                __METHOD__,
+                'Core update notices must be registered before admin_init.',
+                self::NOTICE_VERSION
+            );
+
+            return;
+        }
+
         add_filter(self::WINNER_FILTER, [$this, 'selectWinner']);
         add_action('admin_init', [$this, 'handleDismissal']);
         add_action('admin_notices', [$this, 'render']);
