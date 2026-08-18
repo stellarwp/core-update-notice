@@ -189,8 +189,8 @@ class CoreUpdateNotice {
 		$winner = apply_filters( self::WINNER_FILTER, null );
 
 		return is_array( $winner )
-			&& ($winner['version'] ?? null) === static::NOTICE_VERSION
-			&& ($winner['notice'] ?? null) === $this;
+			   && ( $winner['version'] ?? null ) === static::NOTICE_VERSION
+			   && ( $winner['notice'] ?? null ) === $this;
 	}
 
 	/**
