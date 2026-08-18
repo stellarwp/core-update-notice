@@ -104,6 +104,39 @@ final class CoreUpdateNoticeTest extends TestCase
         $this->assertStringContainsString('outdated version of WordPress', $output);
     }
 
+    public function testEscapesConsumerCopyAndTheDismissUrl(): void
+    {
+        $copy = [
+            'heading' => '<script>heading</script>',
+            'body' => '<img src=x onerror=alert(1)>',
+            'dismiss' => '<svg onload=alert(1)>',
+        ];
+        $dismissUrl = "https://example.test/wp-admin/?redirect='unsafe'&amp;"
+            . CoreUpdateNotice::DISMISS_ACTION . '=9.9';
+
+        $this->stubDismissed('');
+        $this->stubCoreUpdate('upgrade');
+        Functions\when('current_user_can')->justReturn(true);
+        Functions\when('add_query_arg')->justReturn($dismissUrl);
+        Functions\when('wp_nonce_url')->returnArg();
+
+        $notice = new CoreUpdateNotice($copy);
+        $this->stubWinner($notice);
+
+        $output = $this->render($notice);
+
+        foreach ($copy as $value) {
+            $this->assertStringNotContainsString($value, $output);
+            $this->assertStringContainsString(htmlspecialchars($value, ENT_QUOTES, 'UTF-8'), $output);
+        }
+        $this->assertStringNotContainsString($dismissUrl, $output);
+        $this->assertStringContainsString(
+            "href=\"https://example.test/wp-admin/?redirect=&#039;unsafe&#039;&#038;"
+                . CoreUpdateNotice::DISMISS_ACTION . '=9.9"',
+            $output
+        );
+    }
+
     public function testDismissalIsIgnoredWithoutTheQueryArgument(): void
     {
         Filters\expectApplied(CoreUpdateNotice::WINNER_FILTER)->never();

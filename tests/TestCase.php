@@ -19,12 +19,7 @@ abstract class TestCase extends PHPUnitTestCase
 
         Monkey\setUp();
 
-        // Escaping helpers behave as identity functions under test.
-        Functions\stubs([
-            'esc_html' => null,
-            'esc_url' => null,
-            'esc_attr' => null,
-        ]);
+        Functions\stubEscapeFunctions();
     }
 
     protected function tearDown(): void
