@@ -39,7 +39,7 @@ class CoreUpdateNotice
     /**
      * @var array<string, string>
      */
-    private $strings;
+    private array $strings;
 
     /**
      * @param array<string, string> $strings Optional translated copy, keyed heading, body and

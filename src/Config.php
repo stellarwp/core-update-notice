@@ -18,7 +18,7 @@ final class Config
     /**
      * @var ContainerInterface|null
      */
-    private static $container;
+    private static ?ContainerInterface $container;
 
     /**
      * Set the container the package resolves through.
