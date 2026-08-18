@@ -57,8 +57,7 @@ users with the `update_core` capability, and only while WordPress reports an ava
 
 ## Translations
 
-The default copy is English and untranslated. Pass your own strings so they are extracted into your
-plugin's text domain:
+The default copy is English and untranslated. Pass translated copy using your plugin's text domain:
 
 ```php
 Register::notice(
@@ -97,8 +96,8 @@ API before registering it:
 ```php
 add_action(
 	'init',
-	static function () use ( $container, $strings ): void {
-		$notice = new CoreUpdateNotice( $strings );
+	static function () use ( $container, $copy ): void {
+		$notice = new CoreUpdateNotice( $copy );
 
 		$container->singleton( CoreUpdateNotice::class, $notice );
 

@@ -49,17 +49,19 @@ class CoreUpdateNotice
     private const CAPABILITY = 'update_core';
 
     /**
-     * @var array<string, string>
+     * @var array{heading: string, body: string, dismiss: string}
      */
-    private array $strings;
+    private array $copy;
 
     /**
-     * @param array<string, string> $strings Optional translated copy, keyed heading, body and
-     *                                       dismiss. Supply this from the consuming plugin so the
-     *                                       strings land in its own text domain; the defaults are
-     *                                       English and untranslated. Missing keys fall back.
+     * @param array{
+     *     heading?: string,
+     *     body?: string,
+     *     dismiss?: string
+     * } $copy Optional translated copy. Supply this from the consuming plugin so translations use
+     *         its text domain. Missing keys use the English defaults.
      */
-    public function __construct(array $strings = [])
+    public function __construct(array $copy = [])
     {
         $defaults = [
             'heading' => 'Keep your site protected. Update to the latest version of WordPress.',
@@ -69,7 +71,7 @@ class CoreUpdateNotice
             'dismiss' => 'Dismiss this notice.',
         ];
 
-        $this->strings = array_merge($defaults, array_filter($strings, 'is_string'));
+        $this->copy = array_merge($defaults, array_filter($copy, 'is_string'));
     }
 
     /**
@@ -133,10 +135,10 @@ class CoreUpdateNotice
             '<div class="notice notice-warning is-dismissible"><p><strong>%1$s</strong></p><p>%2$s</p>'
             . '<a href="%3$s" class="notice-dismiss" style="text-decoration:none;">'
             . '<span class="screen-reader-text">%4$s</span></a></div>',
-            esc_html($this->strings['heading']),
-            esc_html($this->strings['body']),
+            esc_html($this->copy['heading']),
+            esc_html($this->copy['body']),
             esc_url($this->getDismissUrl($offered)),
-            esc_html($this->strings['dismiss'])
+            esc_html($this->copy['dismiss'])
         );
     }
 
