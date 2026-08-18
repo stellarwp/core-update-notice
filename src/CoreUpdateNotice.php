@@ -30,16 +30,20 @@ class CoreUpdateNotice {
 	 * The version of the notice itself, independent of the package version. Bump it whenever the
 	 * notice's copy or behaviour changes.
 	 *
-	 * When several plugins bundle this package, the highest version registered on the request is
-	 * the one that renders. A plugin that has been updated therefore controls the notice for the
-	 * whole site, without waiting for the others to catch up.
+	 * When several plugins bundle this package, the highest version registered on the request
+	 * handles dismissal. The highest version eligible for the current plugin page renders.
 	 */
 	public const NOTICE_VERSION = '1.0.0';
 
 	/**
-	 * Shared filter that elects one notice instance across every prefixed copy of the package.
+	 * Shared filter that elects one dismissal handler across every prefixed copy of the package.
 	 */
-	public const WINNER_FILTER = 'nx_wp_core_update_notice_winner';
+	public const HANDLER_WINNER_FILTER = 'nx_wp_core_update_notice_winner';
+
+	/**
+	 * Shared filter that elects one renderer from the copies eligible for the current plugin page.
+	 */
+	public const DISPLAY_WINNER_FILTER = 'nx_wp_core_update_notice_display_winner';
 
 	/**
 	 * The capability a user needs to see the notice and to dismiss it.
@@ -87,7 +91,7 @@ class CoreUpdateNotice {
 			return;
 		}
 
-		if ( ! $this->isWinner() ) {
+		if ( ! $this->isWinnerFor( self::HANDLER_WINNER_FILTER ) ) {
 			return;
 		}
 
@@ -114,12 +118,12 @@ class CoreUpdateNotice {
 	}
 
 	/**
-	 * Render the notice, at most once per request across every plugin that registers it.
+	 * Render the notice, at most once per request on an eligible plugin page.
 	 *
 	 * @hook admin_notices
 	 */
 	public function render(): void {
-		if ( ! $this->isWinner() ) {
+		if ( ! $this->isWinnerFor( self::DISPLAY_WINNER_FILTER ) ) {
 			return;
 		}
 
@@ -183,10 +187,12 @@ class CoreUpdateNotice {
 	}
 
 	/**
-	 * Whether the shared winner filter selected this notice instance.
+	 * Whether a shared winner filter selected this notice instance.
+	 *
+	 * @param non-empty-string $filter
 	 */
-	public function isWinner(): bool {
-		$winner = apply_filters( self::WINNER_FILTER, null );
+	private function isWinnerFor( string $filter ): bool {
+		$winner = apply_filters( $filter, null );
 
 		return is_array( $winner )
 			   && ( $winner['version'] ?? null ) === static::NOTICE_VERSION

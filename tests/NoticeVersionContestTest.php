@@ -15,8 +15,8 @@ use StellarWP\CoreUpdateNotice\Tests\Doubles\NewerNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\OlderNotice;
 
 /**
- * Every prefixed copy contributes a candidate through one shared WordPress filter. The selected
- * instance owns both rendering and dismissal for the request.
+ * Every prefixed copy contributes to a global dismissal contest and, when eligible for the current
+ * screen, a separate display contest.
  */
 final class NoticeVersionContestTest extends TestCase {
 
@@ -51,7 +51,7 @@ final class NoticeVersionContestTest extends TestCase {
 		$older = new OlderNotice( [ 'heading' => 'FROM THE OLD PLUGIN' ] );
 		$newer = new NewerNotice( [ 'heading' => 'FROM THE UPDATED PLUGIN' ] );
 
-		$this->stubWinner( $newer, 2 );
+		$this->stubDisplayWinner( $newer, 2 );
 
 		$this->assertSame( '', $this->render( $older ) );
 		$this->assertStringContainsString( 'FROM THE UPDATED PLUGIN', $this->render( $newer ) );
@@ -70,7 +70,7 @@ final class NoticeVersionContestTest extends TestCase {
 
 		$this->assertSame( $first, $winner['notice'] );
 
-		$this->stubWinner( $first, 2 );
+		$this->stubDisplayWinner( $first, 2 );
 
 		$this->assertStringContainsString( 'FIRST PLUGIN', $this->render( $first ) );
 		$this->assertSame( '', $this->render( $second ) );
@@ -131,7 +131,7 @@ final class NoticeVersionContestTest extends TestCase {
 		$older = new OlderNotice();
 		$newer = new NewerNotice();
 
-		Filters\expectApplied( CoreUpdateNotice::WINNER_FILTER )
+		Filters\expectApplied( CoreUpdateNotice::HANDLER_WINNER_FILTER )
 			->once()
 			->with( null )
 			->andReturn( $newer->selectWinner( null ) );
@@ -150,14 +150,24 @@ final class NoticeVersionContestTest extends TestCase {
 	 * @param class-string<CoreUpdateNotice> $firstClass
 	 * @param class-string<CoreUpdateNotice> $secondClass
 	 */
-	public function testRegisteredCallbacksElectOneOwner( string $firstClass, string $secondClass ): void {
-		$filterCallbacks    = [];
+	public function testRegisteredCallbacksElectScopedRendererAndGlobalHandler(
+		string $firstClass,
+		bool $firstIsEligible,
+		string $secondClass,
+		bool $secondIsEligible,
+		?string $expectedHeading
+	): void {
+		$handlerFilters     = [];
+		$displayFilters     = [];
 		$dismissalCallbacks = [];
 		$renderCallbacks    = [];
 
-		Filters\expectAdded( CoreUpdateNotice::WINNER_FILTER )
+		Filters\expectAdded( CoreUpdateNotice::HANDLER_WINNER_FILTER )
 			->twice()
-			->with( Mockery::on( $this->captureCallback( $filterCallbacks ) ), 10, 1 );
+			->with( Mockery::on( $this->captureCallback( $handlerFilters ) ), 10, 1 );
+		Filters\expectAdded( CoreUpdateNotice::DISPLAY_WINNER_FILTER )
+			->twice()
+			->with( Mockery::on( $this->captureCallback( $displayFilters ) ), 10, 1 );
 		Actions\expectAdded( 'admin_init' )
 			->twice()
 			->with( Mockery::on( $this->captureCallback( $dismissalCallbacks ) ), 10, 1 );
@@ -165,22 +175,38 @@ final class NoticeVersionContestTest extends TestCase {
 			->twice()
 			->with( Mockery::on( $this->captureCallback( $renderCallbacks ) ), 10, 1 );
 
-		$first  = new $firstClass([
+		$first            = new $firstClass([
 			'heading' => $firstClass === NewerNotice::class ? 'FROM THE UPDATED PLUGIN' : 'FROM THE OLD PLUGIN',
 		]);
-		$second = new $secondClass([
+		$second           = new $secondClass([
 			'heading' => $secondClass === NewerNotice::class ? 'FROM THE UPDATED PLUGIN' : 'FROM THE OLD PLUGIN',
 		]);
+		$firstPageChecks  = 0;
+		$secondPageChecks = 0;
 
-		Register::notice( $first );
-		Register::notice( $second );
+		Register::notice(
+			$first,
+			static function () use ( &$firstPageChecks, $firstIsEligible ): bool {
+				++$firstPageChecks;
 
-		Filters\expectApplied( CoreUpdateNotice::WINNER_FILTER )
-			->times( 4 )
+				return $firstIsEligible;
+			}
+		);
+		Register::notice(
+			$second,
+			static function () use ( &$secondPageChecks, $secondIsEligible ): bool {
+				++$secondPageChecks;
+
+				return $secondIsEligible;
+			}
+		);
+
+		Filters\expectApplied( CoreUpdateNotice::DISPLAY_WINNER_FILTER )
+			->twice()
 			->with( null )
 			->andReturnUsing(
-				static function ( $winner ) use ( &$filterCallbacks ) {
-					foreach ( $filterCallbacks as $callback ) {
+				static function ( $winner ) use ( &$displayFilters ) {
+					foreach ( $displayFilters as $callback ) {
 						$winner = $callback( $winner );
 					}
 
@@ -198,10 +224,36 @@ final class NoticeVersionContestTest extends TestCase {
 		}
 		$output = (string) ob_get_clean();
 
-		$this->assertStringContainsString( 'FROM THE UPDATED PLUGIN', $output );
-		$this->assertStringNotContainsString( 'FROM THE OLD PLUGIN', $output );
+		if ( $expectedHeading === null ) {
+			$this->assertSame( '', $output );
+		} else {
+			$this->assertStringContainsString( $expectedHeading, $output );
+			$this->assertSame( 1, substr_count( $output, '<div class="notice notice-warning is-dismissible">' ) );
+			$this->assertStringNotContainsString(
+				$expectedHeading === 'FROM THE UPDATED PLUGIN'
+					? 'FROM THE OLD PLUGIN'
+					: 'FROM THE UPDATED PLUGIN',
+				$output
+			);
+		}
+
+		$this->assertSame( 1, $firstPageChecks );
+		$this->assertSame( 1, $secondPageChecks );
 
 		$_GET[ CoreUpdateNotice::DISMISS_ACTION ] = '9.9';
+
+		Filters\expectApplied( CoreUpdateNotice::HANDLER_WINNER_FILTER )
+			->twice()
+			->with( null )
+			->andReturnUsing(
+				static function ( $winner ) use ( &$handlerFilters ) {
+					foreach ( $handlerFilters as $callback ) {
+						$winner = $callback( $winner );
+					}
+
+					return $winner;
+				}
+			);
 
 		Functions\expect( 'check_admin_referer' )
 			->once()
@@ -222,15 +274,52 @@ final class NoticeVersionContestTest extends TestCase {
 		$this->assertInstanceOf( OlderNotice::class, $older );
 		$this->assertTrue( $newer->terminated );
 		$this->assertFalse( $older->terminated );
+		$this->assertSame( 1, $firstPageChecks );
+		$this->assertSame( 1, $secondPageChecks );
 	}
 
 	/**
-	 * @return array<string, array{class-string<CoreUpdateNotice>, class-string<CoreUpdateNotice>}>
+	 * @return array<string, array{
+	 *     class-string<CoreUpdateNotice>, bool, class-string<CoreUpdateNotice>, bool, string|null
+	 * }>
 	 */
 	public function registrationOrders(): array {
 		return [
-			'older first' => [OlderNotice::class, NewerNotice::class],
-			'newer first' => [NewerNotice::class, OlderNotice::class],
+			'both eligible, older first'             => [
+				OlderNotice::class,
+				true,
+				NewerNotice::class,
+				true,
+				'FROM THE UPDATED PLUGIN',
+			],
+			'both eligible, newer first'             => [
+				NewerNotice::class,
+				true,
+				OlderNotice::class,
+				true,
+				'FROM THE UPDATED PLUGIN',
+			],
+			'only older eligible'                    => [
+				OlderNotice::class,
+				true,
+				NewerNotice::class,
+				false,
+				'FROM THE OLD PLUGIN',
+			],
+			'only older eligible, registered second' => [
+				NewerNotice::class,
+				false,
+				OlderNotice::class,
+				true,
+				'FROM THE OLD PLUGIN',
+			],
+			'neither eligible'                       => [
+				OlderNotice::class,
+				false,
+				NewerNotice::class,
+				false,
+				null,
+			],
 		];
 	}
 

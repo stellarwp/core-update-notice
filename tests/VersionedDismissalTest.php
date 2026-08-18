@@ -26,7 +26,7 @@ final class VersionedDismissalTest extends TestCase {
 			->andReturn( '/wp-admin/?' . CoreUpdateNotice::DISMISS_ACTION . '=6.8&_wpnonce=signed' );
 
 		$notice = new CoreUpdateNotice();
-		$this->stubWinner( $notice );
+		$this->stubDisplayWinner( $notice );
 
 		$this->assertStringContainsString(
 			CoreUpdateNotice::DISMISS_ACTION . '=6.8&_wpnonce=signed',
@@ -51,7 +51,7 @@ final class VersionedDismissalTest extends TestCase {
 			->with( CoreUpdateNotice::DISMISSED_OPTION, [ '6.9' => true, '6.8' => true ], false );
 
 		$notice = new TerminatingNotice();
-		$this->stubWinner( $notice );
+		$this->stubHandlerWinner( $notice );
 		$notice->handleDismissal();
 
 		$this->assertTrue( $notice->terminated );
@@ -65,7 +65,7 @@ final class VersionedDismissalTest extends TestCase {
 		Functions\expect( 'wp_safe_redirect' )->never();
 
 		$notice = new TerminatingNotice();
-		$this->stubWinner( $notice );
+		$this->stubHandlerWinner( $notice );
 
 		try {
 			$notice->handleDismissal();
@@ -119,7 +119,7 @@ final class VersionedDismissalTest extends TestCase {
 		Functions\expect( 'wp_safe_redirect' )->once();
 
 		$notice = new TerminatingNotice();
-		$this->stubWinner( $notice );
+		$this->stubHandlerWinner( $notice );
 		$notice->handleDismissal();
 
 		$this->assertTrue( $notice->terminated );

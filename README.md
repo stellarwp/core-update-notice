@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/stellarwp/core-update-notice/workflows/CI/badge.svg)](https://github.com/stellarwp/core-update-notice/actions?query=branch%3Amain)
 
-A WordPress admin notice prompting site administrators to update WordPress, dismissed once across
-every plugin that displays it.
+A WordPress core update notice for plugin-owned admin pages, dismissed once across every plugin
+that displays it.
 
 ## Table of contents
 
@@ -43,29 +43,62 @@ whatever prefix you configure.
 
 ## Displaying the notice
 
-One call, on `init`:
+Register the notice on `init` and provide a callback that identifies your plugin's admin pages:
 
 ```php
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
-add_action( 'init', static fn() => Register::notice( new CoreUpdateNotice() ) );
+$isPluginPage = static function (): bool {
+	$screen = get_current_screen();
+
+	return $screen !== null && in_array(
+		$screen->id,
+		[
+			'toplevel_page_my-plugin',
+			'my-plugin_page_my-plugin-settings',
+		],
+		true
+	);
+};
+
+add_action(
+	'init',
+	static fn() => Register::notice( new CoreUpdateNotice(), $isPluginPage )
+);
 ```
 
-That hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown only to
-users with the `update_core` capability, and only while WordPress reports an available core upgrade.
+Use your plugin's existing admin-page helper instead when it has one:
+
+```php
+$isPluginPage = static fn(): bool => my_plugin_is_admin_page();
+```
+
+The callback is required so the notice cannot become a global wp-admin notice by accident. It runs
+during `admin_notices`, when `get_current_screen()` is available, not when `Register::notice()` is
+called. Return `true` only for screens owned by the consuming plugin.
+
+Registration hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown
+only on an eligible plugin page, only to users with the `update_core` capability, and only while
+WordPress reports an available core upgrade.
 
 ## Translations
 
 The default copy is English and untranslated. Pass translated copy using your plugin's text domain:
 
 ```php
-Register::notice(
-	new CoreUpdateNotice( [
-		'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'my-plugin' ),
-		'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'my-plugin' ),
-		'dismiss' => __( 'Dismiss this notice.', 'my-plugin' ),
-	] )
+add_action(
+	'init',
+	static function (): void {
+		Register::notice(
+			new CoreUpdateNotice( [
+				'heading' => __( 'Keep your site protected. Update to the latest version of WordPress.', 'my-plugin' ),
+				'body'    => __( 'Your site is running on an outdated version of WordPress, …', 'my-plugin' ),
+				'dismiss' => __( 'Dismiss this notice.', 'my-plugin' ),
+			] ),
+			static fn(): bool => my_plugin_is_admin_page()
+		);
+	}
 );
 ```
 
@@ -83,10 +116,14 @@ use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
 $container->singleton( CoreUpdateNotice::class );
+$isPluginPage = static fn(): bool => my_plugin_is_admin_page();
 
 add_action(
 	'init',
-	static fn() => Register::notice( $container->get( CoreUpdateNotice::class ) )
+	static fn() => Register::notice(
+		$container->get( CoreUpdateNotice::class ),
+		$isPluginPage
+	)
 );
 ```
 
@@ -96,12 +133,12 @@ API before registering it:
 ```php
 add_action(
 	'init',
-	static function () use ( $container, $copy ): void {
+	static function () use ( $container, $copy, $isPluginPage ): void {
 		$notice = new CoreUpdateNotice( $copy );
 
 		$container->singleton( CoreUpdateNotice::class, $notice );
 
-		Register::notice( $notice );
+		Register::notice( $notice, $isPluginPage );
 	}
 );
 ```
@@ -122,13 +159,18 @@ since the page was rendered. Stale links add their version without replacing oth
 
 ## Choosing which plugin displays the notice
 
-Every copy enters its notice into a shared WordPress filter when `Register::notice()` runs. The
-filter selects the instance with the highest `CoreUpdateNotice::NOTICE_VERSION`, and that winner
-alone renders and handles dismissal. Plugin load order does not decide between different versions.
+Every copy enters a global dismissal contest when `Register::notice()` runs. During
+`admin_notices`, only copies whose plugin-page callback returns `true` enter a separate display
+contest. The eligible instance with the highest `CoreUpdateNotice::NOTICE_VERSION` renders. If no
+copy is eligible for the current screen, nothing renders.
 
-So if Kadence Blocks and GiveWP both bundle the package and only GiveWP is updated to a release
-with a newer notice, GiveWP's copy takes over site-wide. The stale copies stand down without
-needing to be updated themselves.
+For example, on a Kadence Blocks page, Kadence's copy can render while GiveWP's copy stands down,
+even if GiveWP bundles a newer release. If more than one plugin claims the screen, the newest
+eligible copy wins and plugin load order does not decide between different versions.
+
+The newest copy registered anywhere in wp-admin handles dismissal. This lets it process the shared
+dismiss link even when an older copy rendered on its own plugin page. Plugin-page callbacks are not
+evaluated during `admin_init` dismissal handling.
 
 Equal versions fall back to the first instance registered.
 
@@ -145,15 +187,16 @@ literals. Everything shared between plugins is therefore a string key:
 | --- | --- |
 | `nx_wp_core_update_notice_dismissed` | Site option containing exact dismissed WordPress versions. Non-autoloaded. |
 | `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action, bound to the rendered WordPress version. |
-| `nx_wp_core_update_notice_winner` | WordPress filter that elects one notice instance for the request. |
+| `nx_wp_core_update_notice_winner` | WordPress filter that elects the global dismissal handler. |
+| `nx_wp_core_update_notice_display_winner` | WordPress filter that elects a renderer from copies eligible for the current screen. |
 
-The shared filter requires a version string and object reference at minimum, so prefixed copies can
+The shared filters require a version string and object reference at minimum, so prefixed copies can
 participate without sharing PHP classes or direct globals. Copies must preserve additional fields
 unchanged for forward compatibility.
 
 These keys and the values passed through them are a cross-version compatibility contract. Do not
 rename them or require the winner object to belong to a particular PHP class: another plugin may
-still be running a prefixed copy of v1. The winner filter payload has this minimum shape:
+still be running an older prefixed copy. Both winner filters use this minimum payload shape:
 
 ```php
 [

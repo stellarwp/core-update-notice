@@ -69,8 +69,16 @@ abstract class TestCase extends PHPUnitTestCase {
 		Functions\when( 'wp_nonce_url' )->returnArg();
 	}
 
-	protected function stubWinner( CoreUpdateNotice $notice, int $times = 1 ): void {
-		Filters\expectApplied( CoreUpdateNotice::WINNER_FILTER )
+	protected function stubDisplayWinner( CoreUpdateNotice $notice, int $times = 1 ): void {
+		$this->stubWinner( CoreUpdateNotice::DISPLAY_WINNER_FILTER, $notice, $times );
+	}
+
+	protected function stubHandlerWinner( CoreUpdateNotice $notice, int $times = 1 ): void {
+		$this->stubWinner( CoreUpdateNotice::HANDLER_WINNER_FILTER, $notice, $times );
+	}
+
+	private function stubWinner( string $filter, CoreUpdateNotice $notice, int $times ): void {
+		Filters\expectApplied( $filter )
 			->times( $times )
 			->with( null )
 			->andReturn( $notice->selectWinner( null ) );

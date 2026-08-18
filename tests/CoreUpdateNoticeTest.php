@@ -43,7 +43,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 		$this->stubRenderable();
 
 		$notice = new CoreUpdateNotice();
-		$this->stubWinner( $notice );
+		$this->stubDisplayWinner( $notice );
 
 		$output = $this->render( $notice );
 
@@ -62,7 +62,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 		Functions\when( 'current_user_can' )->justReturn( false );
 
 		$notice = new CoreUpdateNotice();
-		$this->stubWinner( $notice );
+		$this->stubDisplayWinner( $notice );
 
 		$this->assertSame( '', $this->render( $notice ) );
 	}
@@ -73,7 +73,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 		$this->stubRenderable();
 
 		$notice = new CoreUpdateNotice( [ 'heading' => 'Traduzido' ] );
-		$this->stubWinner( $notice );
+		$this->stubDisplayWinner( $notice );
 
 		$output = $this->render( $notice );
 
@@ -87,7 +87,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 		$this->stubRenderable();
 
 		$notice = new CoreUpdateNotice( [ 'heading' => 'Traduzido' ] );
-		$this->stubWinner( $notice );
+		$this->stubDisplayWinner( $notice );
 
 		$output = $this->render( $notice );
 
@@ -110,7 +110,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 		Functions\when( 'wp_nonce_url' )->returnArg();
 
 		$notice = new CoreUpdateNotice( $copy );
-		$this->stubWinner( $notice );
+		$this->stubDisplayWinner( $notice );
 
 		$output = $this->render( $notice );
 
@@ -127,7 +127,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 	}
 
 	public function testDismissalIsIgnoredWithoutTheQueryArgument(): void {
-		Filters\expectApplied( CoreUpdateNotice::WINNER_FILTER )->never();
+		Filters\expectApplied( CoreUpdateNotice::HANDLER_WINNER_FILTER )->never();
 		Functions\expect( 'check_admin_referer' )->never();
 		Functions\expect( 'update_option' )->never();
 
@@ -145,7 +145,7 @@ final class CoreUpdateNoticeTest extends TestCase {
 		Functions\expect( 'wp_safe_redirect' )->never();
 
 		$notice = new TerminatingNotice();
-		$this->stubWinner( $notice );
+		$this->stubHandlerWinner( $notice );
 		$notice->handleDismissal();
 
 		$this->assertFalse( $notice->terminated );

@@ -1,6 +1,6 @@
 {
 	"name": "stellarwp/core-update-notice",
-	"description": "A WordPress admin notice prompting site administrators to update WordPress, with a dismissal flag shared across the plugins that display it.",
+	"description": "A WordPress core update notice scoped to consuming plugins' admin pages, with dismissal shared across plugins.",
 	"type": "library",
 	"license": "MIT",
 	"authors": [
