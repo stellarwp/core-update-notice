@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StellarWP\CoreUpdateNotice\Tests;
 
 use Brain\Monkey\Actions;
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\TerminatingNotice;
@@ -49,7 +50,10 @@ final class CoreUpdateNoticeTest extends TestCase
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
-        $output = $this->render(new CoreUpdateNotice());
+        $notice = new CoreUpdateNotice();
+        $this->stubWinner($notice);
+
+        $output = $this->render($notice);
 
         $this->assertStringContainsString(
             'Keep your site protected. Update to the latest version of WordPress.',
@@ -66,20 +70,10 @@ final class CoreUpdateNoticeTest extends TestCase
         $this->stubCoreUpdate('upgrade');
         Functions\when('current_user_can')->justReturn(false);
 
-        $this->assertSame('', $this->render(new CoreUpdateNotice()));
-    }
+        $notice = new CoreUpdateNotice();
+        $this->stubWinner($notice);
 
-    /**
-     * Two plugins bundling this package must not print the notice twice.
-     */
-    public function testRendersOnlyOncePerRequest(): void
-    {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        $this->assertNotSame('', $this->render(new CoreUpdateNotice()));
-        $this->assertSame('', $this->render(new CoreUpdateNotice()));
+        $this->assertSame('', $this->render($notice));
     }
 
     public function testConsumerSuppliedCopyOverridesTheDefaults(): void
@@ -88,7 +82,10 @@ final class CoreUpdateNoticeTest extends TestCase
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
-        $output = $this->render(new CoreUpdateNotice(['heading' => 'Traduzido']));
+        $notice = new CoreUpdateNotice(['heading' => 'Traduzido']);
+        $this->stubWinner($notice);
+
+        $output = $this->render($notice);
 
         $this->assertStringContainsString('Traduzido', $output);
         $this->assertStringNotContainsString('Keep your site protected', $output);
@@ -100,13 +97,17 @@ final class CoreUpdateNoticeTest extends TestCase
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
-        $output = $this->render(new CoreUpdateNotice(['heading' => 'Traduzido']));
+        $notice = new CoreUpdateNotice(['heading' => 'Traduzido']);
+        $this->stubWinner($notice);
+
+        $output = $this->render($notice);
 
         $this->assertStringContainsString('outdated version of WordPress', $output);
     }
 
     public function testRegisterHooksAdminInitAndAdminNotices(): void
     {
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
         Actions\expectAdded('admin_init')->once();
         Actions\expectAdded('admin_notices')->once();
 
@@ -115,6 +116,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testDismissalIsIgnoredWithoutTheQueryArgument(): void
     {
+        Filters\expectApplied(CoreUpdateNotice::WINNER_FILTER)->never();
         Functions\expect('check_admin_referer')->never();
         Functions\expect('update_option')->never();
 
@@ -131,6 +133,7 @@ final class CoreUpdateNoticeTest extends TestCase
         Functions\expect('wp_safe_redirect')->never();
 
         $notice = new TerminatingNotice();
+        $this->stubWinner($notice);
         $notice->handleDismissal();
 
         $this->assertFalse($notice->terminated);

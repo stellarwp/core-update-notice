@@ -28,6 +28,7 @@ final class VersionedDismissalTest extends TestCase
             ->with(CoreUpdateNotice::DISMISSED_OPTION, '6.8', false);
 
         $notice = new TerminatingNotice();
+        $this->stubWinner($notice);
         $notice->handleDismissal();
 
         $this->assertTrue($notice->terminated);
@@ -98,6 +99,8 @@ final class VersionedDismissalTest extends TestCase
             ->once()
             ->with(CoreUpdateNotice::DISMISSED_OPTION, '6.7', false);
 
-        (new TerminatingNotice())->handleDismissal();
+        $notice = new TerminatingNotice();
+        $this->stubWinner($notice);
+        $notice->handleDismissal();
     }
 }

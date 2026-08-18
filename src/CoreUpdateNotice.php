@@ -23,8 +23,8 @@ class CoreUpdateNotice
     public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
 
     /**
-     * The query argument and nonce action carried by the dismiss link. Shared, so whichever
-     * plugin's admin_init runs first stores the flag.
+     * The query argument and nonce action carried by the dismiss link. Shared so the elected copy
+     * can handle a link rendered by any plugin carrying the package.
      */
     public const DISMISS_ACTION = 'nx-dismiss-wp-core-update-notice';
 
@@ -39,16 +39,9 @@ class CoreUpdateNotice
     public const NOTICE_VERSION = '1.0.0';
 
     /**
-     * Global holding the highest notice version registered this request. Read with
-     * {@see self::registeredVersion()}.
+     * Shared filter that elects one notice instance across every prefixed copy of the package.
      */
-    public const VERSION_KEY = 'nx_wp_core_update_notice_version';
-
-    /**
-     * Global key marking that a copy of this notice has already rendered this request. A static
-     * property cannot do this job: each plugin prefixes the class, so each copy gets its own.
-     */
-    public const RENDER_GUARD = 'nx_wp_core_update_notice_rendered';
+    public const WINNER_FILTER = 'nx_wp_core_update_notice_winner';
 
     /**
      * The capability a user needs to see the notice and to dismiss it.
@@ -84,8 +77,7 @@ class CoreUpdateNotice
      */
     public function register(): void
     {
-        $this->claimVersion();
-
+        add_filter(self::WINNER_FILTER, [$this, 'selectWinner']);
         add_action('admin_init', [$this, 'handleDismissal']);
         add_action('admin_notices', [$this, 'render']);
     }
@@ -98,6 +90,10 @@ class CoreUpdateNotice
     public function handleDismissal(): void
     {
         if (!isset($_GET[self::DISMISS_ACTION])) {
+            return;
+        }
+
+        if (!$this->isWinner()) {
             return;
         }
 
@@ -121,19 +117,13 @@ class CoreUpdateNotice
      */
     public function render(): void
     {
-        if (!empty($GLOBALS[self::RENDER_GUARD])) {
-            return;
-        }
-
-        if (!$this->isNewestRegistered()) {
+        if (!$this->isWinner()) {
             return;
         }
 
         if (!current_user_can(self::CAPABILITY) || !$this->shouldDisplay()) {
             return;
         }
-
-        $GLOBALS[self::RENDER_GUARD] = true;
 
         /*
          * The dismiss control is a link so the shared flag can be stored server side, without a
@@ -167,21 +157,41 @@ class CoreUpdateNotice
     }
 
     /**
-     * Whether this copy is the highest-versioned one registered on this request.
+     * Keep the current winner unless this notice has a higher version.
      *
-     * Every copy registers before `admin_notices` fires, so by render time the global holds the
-     * highest version on the site. Copies below it stand down; ties fall to whichever renders
-     * first, which the render guard then settles.
+     * @param mixed $winner
+     *
+     * @return array{version: string, notice: object, ...}
      */
-    public function isNewestRegistered(): bool
+    public function selectWinner($winner): array
     {
-        $registered = $GLOBALS[self::VERSION_KEY] ?? null;
-
-        if (!is_string($registered) || $registered === '') {
-            return true;
+        if (
+            is_array($winner)
+            && isset($winner['version'], $winner['notice'])
+            && is_string($winner['version'])
+            && $winner['version'] !== ''
+            && is_object($winner['notice'])
+            && version_compare(static::NOTICE_VERSION, $winner['version'], '<=')
+        ) {
+            return $winner;
         }
 
-        return version_compare(static::NOTICE_VERSION, $registered, '>=');
+        return [
+            'version' => static::NOTICE_VERSION,
+            'notice' => $this,
+        ];
+    }
+
+    /**
+     * Whether the shared winner filter selected this notice instance.
+     */
+    public function isWinner(): bool
+    {
+        $winner = apply_filters(self::WINNER_FILTER, null);
+
+        return is_array($winner)
+            && ($winner['version'] ?? null) === static::NOTICE_VERSION
+            && ($winner['notice'] ?? null) === $this;
     }
 
     /**
@@ -190,22 +200,6 @@ class CoreUpdateNotice
     protected function terminate(): void
     {
         exit;
-    }
-
-    /**
-     * Record this copy's notice version if it beats whatever another plugin already registered.
-     */
-    private function claimVersion(): void
-    {
-        $registered = $GLOBALS[self::VERSION_KEY] ?? null;
-
-        if (
-            !is_string($registered)
-            || $registered === ''
-            || version_compare(static::NOTICE_VERSION, $registered, '>')
-        ) {
-            $GLOBALS[self::VERSION_KEY] = static::NOTICE_VERSION;
-        }
     }
 
     /**

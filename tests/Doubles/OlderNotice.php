@@ -12,4 +12,11 @@ use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 final class OlderNotice extends CoreUpdateNotice
 {
     public const NOTICE_VERSION = '0.0.1';
+
+    public bool $terminated = false;
+
+    protected function terminate(): void
+    {
+        $this->terminated = true;
+    }
 }

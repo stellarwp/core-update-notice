@@ -123,14 +123,15 @@ first read, so an existing dismissal is honoured and re-arms on the next release
 
 ## Choosing which plugin displays the notice
 
-Every copy registers `CoreUpdateNotice::NOTICE_VERSION` when `register()` runs, and only the
-highest version registered on the request renders. Plugin load order does not decide it.
+Every copy enters itself into a shared WordPress filter when `register()` runs. The filter selects
+the instance with the highest `CoreUpdateNotice::NOTICE_VERSION`, and that winner alone renders and
+handles dismissal. Plugin load order does not decide between different versions.
 
 So if Kadence Blocks and GiveWP both bundle the package and only GiveWP is updated to a release
 with a newer notice, GiveWP's copy takes over site-wide. The stale copies stand down without
 needing to be updated themselves.
 
-Equal versions fall back to whichever renders first, which the render guard settles.
+Equal versions fall back to the first instance registered.
 
 Bump `NOTICE_VERSION` whenever the notice's copy or behaviour changes. It is deliberately separate
 from the package version, so a release that only touches tooling does not reshuffle which plugin
@@ -144,12 +145,11 @@ literals. Everything shared between plugins is therefore a string key:
 | Key | Purpose |
 | --- | --- |
 | `nx_wp_core_update_notice_dismissed` | Site option holding the WordPress version the notice was dismissed against. Non-autoloaded. |
-| `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action. Whichever plugin's `admin_init` runs first stores the flag. |
-| `nx_wp_core_update_notice_rendered` | Global marking that a copy already rendered this request, so two plugins do not print the notice twice. |
-| `nx_wp_core_update_notice_version` | Global holding the highest `NOTICE_VERSION` registered this request. Copies below it do not render. |
+| `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action. The elected plugin stores the version. |
+| `nx_wp_core_update_notice_winner` | WordPress filter that elects one notice instance for the request. |
 
-A static property cannot serve as the render guard: each prefixed copy is a distinct class with its
-own statics.
+The shared filter carries only a version string and object reference, so prefixed copies can
+participate without sharing PHP classes or direct globals.
 
 Dismissal is a nonce-protected link rather than the core dismiss button, which only removes the node
 client side. The notice carries `is-dismissible` because that rule supplies the `position: relative`

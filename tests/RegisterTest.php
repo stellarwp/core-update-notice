@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StellarWP\CoreUpdateNotice\Tests;
 
 use Brain\Monkey\Actions;
+use Brain\Monkey\Filters;
 use ReflectionProperty;
 use RuntimeException;
 use StellarWP\CoreUpdateNotice\Config;
@@ -33,6 +34,7 @@ final class RegisterTest extends TestCase
 
     public function testItRegistersWithoutAContainer(): void
     {
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
         Actions\expectAdded('admin_init')->once();
         Actions\expectAdded('admin_notices')->once();
 
@@ -41,6 +43,7 @@ final class RegisterTest extends TestCase
 
     public function testItBindsTheNoticeAsASingletonOnTheContainer(): void
     {
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
         Actions\expectAdded('admin_init')->once();
         Actions\expectAdded('admin_notices')->once();
 
@@ -59,6 +62,7 @@ final class RegisterTest extends TestCase
      */
     public function testItBindsOnAnAutowiringContainerAndKeepsTheCallerStrings(): void
     {
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
         Actions\expectAdded('admin_init')->once();
         Actions\expectAdded('admin_notices')->once();
 
@@ -73,6 +77,7 @@ final class RegisterTest extends TestCase
 
     public function testTheBoundInstanceIsStableAcrossResolutions(): void
     {
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)->once();
         Actions\expectAdded('admin_init')->once();
         Actions\expectAdded('admin_notices')->once();
 

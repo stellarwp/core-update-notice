@@ -4,30 +4,48 @@ declare(strict_types=1);
 
 namespace StellarWP\CoreUpdateNotice\Tests;
 
+use Brain\Monkey\Actions;
+use Brain\Monkey\Filters;
+use Brain\Monkey\Functions;
+use Closure;
+use Mockery;
 use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\NewerNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\OlderNotice;
+use stdClass;
 
 /**
- * When several plugins bundle the package, the highest notice version registered on the request
- * renders. Updating one plugin therefore puts it in charge without touching the others.
+ * Every prefixed copy contributes a candidate through one shared WordPress filter. The selected
+ * instance owns both rendering and dismissal for the request.
  */
 final class NoticeVersionContestTest extends TestCase
 {
-    public function testASingleCopyRenders(): void
+    public function testASingleCandidateWins(): void
     {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
         $notice = new CoreUpdateNotice();
-        $notice->register();
+        $winner = $notice->selectWinner(null);
 
-        $this->assertTrue($notice->isNewestRegistered());
-        $this->assertNotSame('', $this->render($notice));
+        $this->assertSame(CoreUpdateNotice::NOTICE_VERSION, $winner['version']);
+        $this->assertSame($notice, $winner['notice']);
     }
 
-    public function testTheNewerCopyWinsRegardlessOfRegistrationOrder(): void
+    public function testTheNewerCandidateWinsRegardlessOfRegistrationOrder(): void
+    {
+        $older = new OlderNotice(['heading' => 'FROM THE OLD PLUGIN']);
+        $newer = new NewerNotice(['heading' => 'FROM THE UPDATED PLUGIN']);
+
+        $winner = $older->selectWinner(null);
+        $winner = $newer->selectWinner($winner);
+
+        $this->assertSame($newer, $winner['notice']);
+
+        $winner = $newer->selectWinner(null);
+        $winner = $older->selectWinner($winner);
+
+        $this->assertSame($newer, $winner['notice']);
+    }
+
+    public function testOnlyTheSelectedInstanceRenders(): void
     {
         $this->stubDismissed('');
         $this->stubCoreUpdate('upgrade');
@@ -36,81 +54,188 @@ final class NoticeVersionContestTest extends TestCase
         $older = new OlderNotice(['heading' => 'FROM THE OLD PLUGIN']);
         $newer = new NewerNotice(['heading' => 'FROM THE UPDATED PLUGIN']);
 
-        // The stale plugin loads first, as it would if it sorted earlier.
-        $older->register();
-        $newer->register();
-
-        $this->assertFalse($older->isNewestRegistered());
-        $this->assertTrue($newer->isNewestRegistered());
-
-        $this->assertSame('', $this->render($older));
-
-        $output = $this->render($newer);
-        $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $output);
-    }
-
-    public function testTheNewerCopyWinsWhenItRegistersFirst(): void
-    {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        $newer = new NewerNotice(['heading' => 'FROM THE UPDATED PLUGIN']);
-        $older = new OlderNotice(['heading' => 'FROM THE OLD PLUGIN']);
-
-        $newer->register();
-        $older->register();
+        $this->stubWinner($newer, 2);
 
         $this->assertSame('', $this->render($older));
         $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $this->render($newer));
     }
 
+    public function testEqualVersionsKeepTheFirstCandidate(): void
+    {
+        $this->stubDismissed('');
+        $this->stubCoreUpdate('upgrade');
+        $this->stubRenderable();
+
+        $first = new CoreUpdateNotice(['heading' => 'FIRST PLUGIN']);
+        $second = new CoreUpdateNotice(['heading' => 'SECOND PLUGIN']);
+
+        $winner = $first->selectWinner(null);
+        $winner = $second->selectWinner($winner);
+
+        $this->assertSame($first, $winner['notice']);
+
+        $this->stubWinner($first, 2);
+
+        $this->assertStringContainsString('FIRST PLUGIN', $this->render($first));
+        $this->assertSame('', $this->render($second));
+    }
+
+    public function testInvalidCandidatesAreReplaced(): void
+    {
+        $notice = new CoreUpdateNotice();
+        $invalid = [
+            true,
+            [],
+            ['version' => '', 'notice' => new stdClass()],
+            ['version' => 99, 'notice' => new stdClass()],
+            ['version' => '99.0.0', 'notice' => 'not an object'],
+        ];
+
+        foreach ($invalid as $candidate) {
+            $winner = $notice->selectWinner($candidate);
+
+            $this->assertSame(CoreUpdateNotice::NOTICE_VERSION, $winner['version']);
+            $this->assertSame($notice, $winner['notice']);
+        }
+    }
+
+    public function testExistingWinnerPayloadAndForeignObjectArePreserved(): void
+    {
+        $candidate = [
+            'version' => '99.0.0',
+            'notice' => new stdClass(),
+            'future-field' => 'keep me',
+        ];
+
+        $this->assertSame($candidate, (new CoreUpdateNotice())->selectWinner($candidate));
+    }
+
+    public function testAnUnregisteredCopyDoesNotRender(): void
+    {
+        Functions\expect('current_user_can')->never();
+
+        $this->assertSame('', $this->render(new CoreUpdateNotice()));
+    }
+
+    public function testALosingCopyDoesNotHandleDismissal(): void
+    {
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
+
+        $older = new OlderNotice();
+        $newer = new NewerNotice();
+
+        Filters\expectApplied(CoreUpdateNotice::WINNER_FILTER)
+            ->once()
+            ->with(null)
+            ->andReturn($newer->selectWinner(null));
+        Functions\expect('check_admin_referer')->never();
+        Functions\expect('update_option')->never();
+        Functions\expect('wp_safe_redirect')->never();
+
+        $older->handleDismissal();
+
+        $this->assertFalse($older->terminated);
+    }
+
     /**
-     * The older copy must stand down even if its admin_notices callback fires first, which is the
-     * case the render guard alone could not handle.
+     * @dataProvider registrationOrders
+     *
+     * @param class-string<CoreUpdateNotice> $firstClass
+     * @param class-string<CoreUpdateNotice> $secondClass
      */
-    public function testTheOlderCopyStandsDownEvenWhenItRendersFirst(): void
+    public function testRegisteredCallbacksElectOneOwner(string $firstClass, string $secondClass): void
     {
+        $filterCallbacks = [];
+        $dismissalCallbacks = [];
+        $renderCallbacks = [];
+
+        Filters\expectAdded(CoreUpdateNotice::WINNER_FILTER)
+            ->twice()
+            ->with(Mockery::on($this->captureCallback($filterCallbacks)), 10, 1);
+        Actions\expectAdded('admin_init')
+            ->twice()
+            ->with(Mockery::on($this->captureCallback($dismissalCallbacks)), 10, 1);
+        Actions\expectAdded('admin_notices')
+            ->twice()
+            ->with(Mockery::on($this->captureCallback($renderCallbacks)), 10, 1);
+
+        $first = new $firstClass([
+            'heading' => $firstClass === NewerNotice::class ? 'FROM THE UPDATED PLUGIN' : 'FROM THE OLD PLUGIN',
+        ]);
+        $second = new $secondClass([
+            'heading' => $secondClass === NewerNotice::class ? 'FROM THE UPDATED PLUGIN' : 'FROM THE OLD PLUGIN',
+        ]);
+
+        $first->register();
+        $second->register();
+
+        Filters\expectApplied(CoreUpdateNotice::WINNER_FILTER)
+            ->times(4)
+            ->with(null)
+            ->andReturnUsing(
+                static function ($winner) use (&$filterCallbacks) {
+                    foreach ($filterCallbacks as $callback) {
+                        $winner = $callback($winner);
+                    }
+
+                    return $winner;
+                }
+            );
+
         $this->stubDismissed('');
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
-        $older = new OlderNotice(['heading' => 'FROM THE OLD PLUGIN']);
-        $newer = new NewerNotice(['heading' => 'FROM THE UPDATED PLUGIN']);
+        ob_start();
+        foreach ($renderCallbacks as $callback) {
+            $callback();
+        }
+        $output = (string) ob_get_clean();
 
-        $older->register();
-        $newer->register();
+        $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $output);
+        $this->assertStringNotContainsString('FROM THE OLD PLUGIN', $output);
 
-        $first = $this->render($older);
-        $second = $this->render($newer);
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '1';
 
-        $this->assertSame('', $first);
-        $this->assertStringContainsString('FROM THE UPDATED PLUGIN', $second);
+        Functions\expect('check_admin_referer')->once()->with(CoreUpdateNotice::DISMISS_ACTION);
+        Functions\when('remove_query_arg')->justReturn('/wp-admin/');
+        Functions\expect('update_option')
+            ->once()
+            ->with(CoreUpdateNotice::DISMISSED_OPTION, '9.9', false);
+        Functions\expect('wp_safe_redirect')->once()->with('/wp-admin/');
+
+        foreach ($dismissalCallbacks as $callback) {
+            $callback();
+        }
+
+        $newer = $first instanceof NewerNotice ? $first : $second;
+        $older = $first instanceof OlderNotice ? $first : $second;
+        $this->assertInstanceOf(NewerNotice::class, $newer);
+        $this->assertInstanceOf(OlderNotice::class, $older);
+        $this->assertTrue($newer->terminated);
+        $this->assertFalse($older->terminated);
     }
 
-    public function testEqualVersionsStillRenderOnlyOnce(): void
+    /**
+     * @return array<string, array{class-string<CoreUpdateNotice>, class-string<CoreUpdateNotice>}>
+     */
+    public function registrationOrders(): array
     {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
-
-        $a = new CoreUpdateNotice();
-        $b = new CoreUpdateNotice();
-
-        $a->register();
-        $b->register();
-
-        $this->assertNotSame('', $this->render($a));
-        $this->assertSame('', $this->render($b));
+        return [
+            'older first' => [OlderNotice::class, NewerNotice::class],
+            'newer first' => [NewerNotice::class, OlderNotice::class],
+        ];
     }
 
-    public function testAnUnregisteredCopyDoesNotBlockItself(): void
+    /**
+     * @param array<int, callable> $callbacks
+     */
+    private function captureCallback(array &$callbacks): Closure
     {
-        $this->stubDismissed('');
-        $this->stubCoreUpdate('upgrade');
-        $this->stubRenderable();
+        return static function (callable $callback) use (&$callbacks): bool {
+            $callbacks[] = $callback;
 
-        // render() without register() happens if a consumer hooks the method directly.
-        $this->assertNotSame('', $this->render(new CoreUpdateNotice()));
+            return true;
+        };
     }
 }

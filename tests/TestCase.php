@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StellarWP\CoreUpdateNotice\Tests;
 
 use Brain\Monkey;
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use Mockery;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
@@ -20,7 +21,6 @@ abstract class TestCase extends PHPUnitTestCase
         Monkey\setUp();
 
         Config::reset();
-        $this->resetGlobals();
 
         // Escaping helpers behave as identity functions under test.
         Functions\stubs([
@@ -33,7 +33,6 @@ abstract class TestCase extends PHPUnitTestCase
     protected function tearDown(): void
     {
         Config::reset();
-        $this->resetGlobals();
         unset($_GET[CoreUpdateNotice::DISMISS_ACTION]);
 
         // Brain\Monkey expectations are Mockery assertions; count them so tests that only assert
@@ -45,11 +44,6 @@ abstract class TestCase extends PHPUnitTestCase
         Monkey\tearDown();
 
         parent::tearDown();
-    }
-
-    protected function resetGlobals(): void
-    {
-        unset($GLOBALS[CoreUpdateNotice::RENDER_GUARD], $GLOBALS[CoreUpdateNotice::VERSION_KEY]);
     }
 
     /**
@@ -87,6 +81,14 @@ abstract class TestCase extends PHPUnitTestCase
         Functions\when('current_user_can')->justReturn(true);
         Functions\when('add_query_arg')->justReturn('/wp-admin/?' . CoreUpdateNotice::DISMISS_ACTION . '=1');
         Functions\when('wp_nonce_url')->returnArg();
+    }
+
+    protected function stubWinner(CoreUpdateNotice $notice, int $times = 1): void
+    {
+        Filters\expectApplied(CoreUpdateNotice::WINNER_FILTER)
+            ->times($times)
+            ->with(null)
+            ->andReturn($notice->selectWinner(null));
     }
 
     protected function render(CoreUpdateNotice $notice): string
