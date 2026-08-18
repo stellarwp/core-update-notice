@@ -14,11 +14,11 @@ namespace StellarWP\CoreUpdateNotice;
 class CoreUpdateNotice
 {
     /**
-     * Dismissal flag shared with the other plugins that display this notice, so a site running
+     * Dismissal state shared with the other plugins that display this notice, so a site running
      * more than one of them only has to dismiss it once. Do not prefix it per plugin.
      *
-     * Holds the WordPress version the notice was dismissed against, not a boolean: the notice has
-     * to come back when a later release leaves the site outdated again.
+     * Holds a set of exact WordPress versions dismissed on this site. A dismissal for one release
+     * must not hide a different release, including a security update on an older release branch.
      */
     public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
 
@@ -75,7 +75,7 @@ class CoreUpdateNotice
     }
 
     /**
-     * Store the shared dismissal flag when the notice's dismiss control is used.
+     * Add the offered version to the shared dismissal set when its dismiss control is used.
      *
      * @hook admin_init
      */
@@ -83,7 +83,11 @@ class CoreUpdateNotice
     {
         $target = $_GET[self::DISMISS_ACTION] ?? null;
 
-        if (!is_string($target) || $target === '') {
+        if (
+            !is_string($target)
+            || strlen($target) > 32
+            || preg_match('/\A\d+(?:\.\d+)*(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?\z/', $target) !== 1
+        ) {
             return;
         }
 
@@ -97,7 +101,16 @@ class CoreUpdateNotice
             return;
         }
 
-        update_option(self::DISMISSED_OPTION, $target, false);
+        $dismissed = get_option(self::DISMISSED_OPTION, []);
+
+        if (!is_array($dismissed)) {
+            $dismissed = [];
+        }
+
+        if (!isset($dismissed[$target])) {
+            $dismissed[$target] = true;
+            update_option(self::DISMISSED_OPTION, $dismissed, false);
+        }
 
         wp_safe_redirect(remove_query_arg([self::DISMISS_ACTION, '_wpnonce']));
 
@@ -126,7 +139,7 @@ class CoreUpdateNotice
         }
 
         /*
-         * The dismiss control is a link so the shared flag can be stored server side, without a
+         * The dismiss control is a link so the shared state can be stored server side, without a
          * script. "is-dismissible" supplies the positioning context the control needs, and core's
          * makeNoticesDismissible() skips notices that already carry a .notice-dismiss, so it does
          * not append a second, non-persisting button.
@@ -213,29 +226,13 @@ class CoreUpdateNotice
     /**
      * Whether the offered version has already been dismissed.
      *
-     * The stored value is the WordPress version the notice was last dismissed against, so a later
-     * release brings it back rather than silencing it forever.
+     * Dismissals use exact version keys so one release cannot silence another release.
      */
     private function isDismissedFor(string $offered): bool
     {
-        $stored = get_option(self::DISMISSED_OPTION, '');
+        $dismissed = get_option(self::DISMISSED_OPTION, []);
 
-        if (is_string($stored) && $stored !== '' && $stored !== '1') {
-            return version_compare($stored, $offered, '>=');
-        }
-
-        if (!empty($stored)) {
-            /*
-             * A boolean flag written before dismissal was versioned. Adopt the current offer so the
-             * dismissal is honoured now and re-arms on the next release, rather than either
-             * reappearing immediately or never showing again.
-             */
-            update_option(self::DISMISSED_OPTION, $offered, false);
-
-            return true;
-        }
-
-        return false;
+        return is_array($dismissed) && isset($dismissed[$offered]);
     }
 
     /**
@@ -266,7 +263,7 @@ class CoreUpdateNotice
     }
 
     /**
-     * The nonce-protected link that stores the shared dismissal flag.
+     * The nonce-protected link that stores a dismissed version.
      */
     private function getDismissUrl(string $offered): string
     {

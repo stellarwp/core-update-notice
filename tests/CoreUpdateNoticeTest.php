@@ -13,7 +13,7 @@ final class CoreUpdateNoticeTest extends TestCase
 {
     public function testDisplaysWhenACoreUpdateIsAvailable(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
 
         $this->assertTrue((new CoreUpdateNotice())->shouldDisplay());
@@ -21,7 +21,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testDoesNotDisplayWhenCoreIsUpToDate(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('latest');
 
         $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
@@ -29,7 +29,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testDoesNotDisplayWhenNoUpdateDataIsAvailable(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate(null);
 
         $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
@@ -37,7 +37,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testDoesNotDisplayWhenTheOfferedVersionIsMissing(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         Functions\when('get_core_updates')->justReturn([(object) ['response' => 'upgrade']]);
 
         $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
@@ -45,7 +45,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testRendersTheCopyAndADismissLink(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
@@ -65,7 +65,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testRendersNothingWithoutTheUpdateCoreCapability(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         Functions\when('current_user_can')->justReturn(false);
 
@@ -77,7 +77,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testConsumerSuppliedCopyOverridesTheDefaults(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
@@ -92,7 +92,7 @@ final class CoreUpdateNoticeTest extends TestCase
 
     public function testPartialCopyFallsBackToDefaultsForMissingKeys(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         $this->stubRenderable();
 
@@ -114,7 +114,7 @@ final class CoreUpdateNoticeTest extends TestCase
         $dismissUrl = "https://example.test/wp-admin/?redirect='unsafe'&amp;"
             . CoreUpdateNotice::DISMISS_ACTION . '=9.9';
 
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade');
         Functions\when('current_user_can')->justReturn(true);
         Functions\when('add_query_arg')->justReturn($dismissUrl);

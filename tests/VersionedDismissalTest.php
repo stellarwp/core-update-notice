@@ -10,14 +10,13 @@ use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 use StellarWP\CoreUpdateNotice\Tests\Doubles\TerminatingNotice;
 
 /**
- * Dismissal is recorded against the WordPress version it was dismissed for, so a later release
- * brings the notice back instead of silencing it permanently.
+ * Each dismissed WordPress version is recorded exactly, so one release cannot silence another.
  */
 final class VersionedDismissalTest extends TestCase
 {
     public function testDismissLinkAndNonceTargetTheOfferedVersion(): void
     {
-        $this->stubDismissed('');
+        $this->stubDismissed([]);
         $this->stubCoreUpdate('upgrade', '6.8');
         Functions\when('current_user_can')->justReturn(true);
         Functions\expect('add_query_arg')
@@ -41,10 +40,11 @@ final class VersionedDismissalTest extends TestCase
         );
     }
 
-    public function testDismissalStoresTheSignedRenderedVersionWithoutRequerying(): void
+    public function testDismissalAddsTheSignedRenderedVersionWithoutRequerying(): void
     {
         $_GET[CoreUpdateNotice::DISMISS_ACTION] = '6.8';
 
+        $this->stubDismissed(['6.9' => true]);
         Functions\expect('get_core_updates')->never();
         Functions\expect('get_bloginfo')->never();
         Functions\expect('check_admin_referer')
@@ -55,7 +55,7 @@ final class VersionedDismissalTest extends TestCase
         Functions\expect('wp_safe_redirect')->once();
         Functions\expect('update_option')
             ->once()
-            ->with(CoreUpdateNotice::DISMISSED_OPTION, '6.8', false);
+            ->with(CoreUpdateNotice::DISMISSED_OPTION, ['6.9' => true, '6.8' => true], false);
 
         $notice = new TerminatingNotice();
         $this->stubWinner($notice);
@@ -105,54 +105,67 @@ final class VersionedDismissalTest extends TestCase
         (new CoreUpdateNotice())->handleDismissal();
     }
 
+    public function testDismissalIgnoresAMalformedTarget(): void
+    {
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '6.8<script>';
+
+        Functions\expect('check_admin_referer')->never();
+        Functions\expect('update_option')->never();
+
+        (new CoreUpdateNotice())->handleDismissal();
+    }
+
+    public function testDismissalAcceptsAPreReleaseTarget(): void
+    {
+        $_GET[CoreUpdateNotice::DISMISS_ACTION] = '6.9-RC1-12345';
+
+        $this->stubDismissed([]);
+        Functions\expect('check_admin_referer')
+            ->once()
+            ->with(CoreUpdateNotice::DISMISS_ACTION . ':6.9-RC1-12345');
+        Functions\when('current_user_can')->justReturn(true);
+        Functions\when('remove_query_arg')->justReturn('/wp-admin/');
+        Functions\expect('update_option')
+            ->once()
+            ->with(CoreUpdateNotice::DISMISSED_OPTION, ['6.9-RC1-12345' => true], false);
+        Functions\expect('wp_safe_redirect')->once();
+
+        $notice = new TerminatingNotice();
+        $this->stubWinner($notice);
+        $notice->handleDismissal();
+
+        $this->assertTrue($notice->terminated);
+    }
+
     public function testStaysHiddenForTheVersionItWasDismissedFor(): void
     {
-        $this->stubDismissed('6.8');
+        $this->stubDismissed(['6.8' => true]);
         $this->stubCoreUpdate('upgrade', '6.8');
 
         $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
     }
 
-    /**
-     * The bug this addresses: a boolean flag silenced the notice for every future release.
-     */
     public function testReturnsWhenALaterVersionIsOffered(): void
     {
-        $this->stubDismissed('6.8');
+        $this->stubDismissed(['6.8' => true]);
         $this->stubCoreUpdate('upgrade', '6.9');
 
         $this->assertTrue((new CoreUpdateNotice())->shouldDisplay());
     }
 
-    public function testStaysHiddenWhenTheOfferIsOlderThanTheDismissal(): void
+    public function testADismissedHigherBranchDoesNotHideALowerBranchSecurityRelease(): void
     {
-        $this->stubDismissed('6.9');
-        $this->stubCoreUpdate('upgrade', '6.8');
-
-        $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
-    }
-
-    public function testHandlesPointReleases(): void
-    {
-        $this->stubDismissed('6.8.1');
-        $this->stubCoreUpdate('upgrade', '6.8.2');
+        $this->stubDismissed(['6.9' => true]);
+        $this->stubCoreUpdate('upgrade', '6.8.1');
 
         $this->assertTrue((new CoreUpdateNotice())->shouldDisplay());
     }
 
-    /**
-     * A flag written before dismissal was versioned is adopted for the current offer: honoured now,
-     * re-armed on the next release.
-     */
-    public function testALegacyBooleanFlagIsMigratedToTheCurrentOffer(): void
+    public function testHandlesPointReleases(): void
     {
-        $this->stubDismissed(true);
-        $this->stubCoreUpdate('upgrade', '6.8');
+        $this->stubDismissed(['6.8.1' => true]);
+        $this->stubCoreUpdate('upgrade', '6.8.2');
 
-        Functions\expect('update_option')
-            ->once()
-            ->with(CoreUpdateNotice::DISMISSED_OPTION, '6.8', false);
-
-        $this->assertFalse((new CoreUpdateNotice())->shouldDisplay());
+        $this->assertTrue((new CoreUpdateNotice())->shouldDisplay());
     }
 }

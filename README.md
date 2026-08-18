@@ -111,16 +111,14 @@ Container setup remains a responsibility of the consuming project; this package 
 
 ## Dismissal
 
-Dismissal is recorded against the WordPress version it was dismissed for, not as a boolean. A site
-running 6.7 that dismisses the notice for 6.8 sees nothing more about 6.8, but the notice returns
-when 6.9 ships and the install is behind again.
+Dismissals are stored by exact WordPress version. If a site running 6.7.1 dismisses an offer to
+update to 6.8.2, only the notice for 6.8.2 is hidden. A later offer for 6.8.3 or 6.9.0 appears
+normally. Likewise, dismissing 6.9.0 does not hide a subsequent 6.8.3 security update because they
+are separate versions.
 
 The dismiss link carries the offered version and its nonce is bound to that exact value. The handler
-stores the version the user saw instead of re-querying an offer that may have changed since the page
-was rendered.
-
-A flag written before dismissal was versioned is adopted for the offer current at the time it is
-first read, so an existing dismissal is honoured and re-arms on the next release.
+validates and adds the version the user saw instead of re-querying an offer that may have changed
+since the page was rendered. Stale links add their version without replacing other dismissals.
 
 ## Choosing which plugin displays the notice
 
@@ -145,12 +143,13 @@ literals. Everything shared between plugins is therefore a string key:
 
 | Key | Purpose |
 | --- | --- |
-| `nx_wp_core_update_notice_dismissed` | Site option holding the WordPress version the notice was dismissed against. Non-autoloaded. |
+| `nx_wp_core_update_notice_dismissed` | Site option containing exact dismissed WordPress versions. Non-autoloaded. |
 | `nx-dismiss-wp-core-update-notice` | Dismiss query argument and nonce action, bound to the rendered WordPress version. |
 | `nx_wp_core_update_notice_winner` | WordPress filter that elects one notice instance for the request. |
 
-The shared filter carries only a version string and object reference, so prefixed copies can
-participate without sharing PHP classes or direct globals.
+The shared filter requires a version string and object reference at minimum, so prefixed copies can
+participate without sharing PHP classes or direct globals. Copies must preserve additional fields
+unchanged for forward compatibility.
 
 These keys and the values passed through them are a cross-version compatibility contract. Do not
 rename them or require the winner object to belong to a particular PHP class: another plugin may
@@ -163,10 +162,9 @@ still be running a prefixed copy of v1. The winner filter payload has this minim
 ]
 ```
 
-Older copies must preserve unknown payload fields so newer releases can extend it. The highest
-version wins, and equal versions keep the first candidate. The dismiss nonce action is always
-`CoreUpdateNotice::DISMISS_ACTION . ':' . $offeredVersion`; changing that formula would prevent a
-different bundled copy from handling the rendered link.
+The highest version wins, and equal versions keep the first candidate. The dismiss nonce action
+is always `CoreUpdateNotice::DISMISS_ACTION . ':' . $offeredVersion`; changing that formula would
+prevent a different bundled copy from handling the rendered link.
 
 Dismissal is a nonce-protected link rather than the core dismiss button, which only removes the node
 client side. The notice carries `is-dismissible` because that rule supplies the `position: relative`
