@@ -1,6 +1,4 @@
-<?php
-
-declare(strict_types=1);
+<?php declare(strict_types=1);
 
 namespace StellarWP\CoreUpdateNotice\Tests\Doubles;
 
@@ -9,14 +7,14 @@ use StellarWP\CoreUpdateNotice\CoreUpdateNotice;
 /**
  * Stands in for a plugin that has not been updated in a while.
  */
-final class OlderNotice extends CoreUpdateNotice
-{
-    public const NOTICE_VERSION = '0.0.1';
+final class OlderNotice extends CoreUpdateNotice {
 
-    public bool $terminated = false;
+	public const NOTICE_VERSION = '0.0.1';
 
-    protected function terminate(): void
-    {
-        $this->terminated = true;
-    }
+	public bool $terminated = false;
+
+	protected function terminate(): void {
+		$this->terminated = true;
+	}
+
 }

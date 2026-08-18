@@ -188,7 +188,7 @@ composer check
 
 | Command | What it runs |
 | --- | --- |
-| `composer phpcs` | PSR-12 over `src` and `tests` |
+| `composer phpcs` | Nexcess coding standards over `src` and `tests` |
 | `composer phpstan` | Level 8, `src` only |
 | `composer test` | PHPUnit |
 | `composer check` | All three, in that order |
