@@ -76,7 +76,8 @@ $isPluginPage = static fn(): bool => my_plugin_is_admin_page();
 
 The callback is required so the notice cannot become a global wp-admin notice by accident. It runs
 during `admin_notices`, when `get_current_screen()` is available, not when `Register::notice()` is
-called. Return `true` only for screens owned by the consuming plugin.
+called. Each callback is evaluated at most once per request, and its result is reused for subsequent
+display-filter evaluations. Return `true` only for screens owned by the consuming plugin.
 
 Registration hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown
 only on an eligible plugin page, only to users with the `update_core` capability, and only while
