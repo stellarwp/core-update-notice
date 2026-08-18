@@ -44,7 +44,7 @@ final class NoticeVersionContestTest extends TestCase {
 	}
 
 	public function testOnlyTheSelectedInstanceRenders(): void {
-		$this->stubDismissed( '' );
+		$this->stubDismissed( [] );
 		$this->stubCoreUpdate( 'upgrade' );
 		$this->stubRenderable();
 
@@ -58,7 +58,7 @@ final class NoticeVersionContestTest extends TestCase {
 	}
 
 	public function testEqualVersionsKeepTheFirstCandidate(): void {
-		$this->stubDismissed( '' );
+		$this->stubDismissed( [] );
 		$this->stubCoreUpdate( 'upgrade' );
 		$this->stubRenderable();
 
@@ -188,7 +188,7 @@ final class NoticeVersionContestTest extends TestCase {
 				}
 			);
 
-		$this->stubDismissed( '' );
+		$this->stubDismissed( [] );
 		$this->stubCoreUpdate( 'upgrade' );
 		$this->stubRenderable();
 
@@ -209,7 +209,7 @@ final class NoticeVersionContestTest extends TestCase {
 		Functions\when( 'remove_query_arg' )->justReturn( '/wp-admin/' );
 		Functions\expect( 'update_option' )
 			->once()
-			->with( CoreUpdateNotice::DISMISSED_OPTION, '9.9', false );
+			->with( CoreUpdateNotice::DISMISSED_OPTION, [ '9.9' => true ], false );
 		Functions\expect( 'wp_safe_redirect' )->once()->with( '/wp-admin/' );
 
 		foreach ( $dismissalCallbacks as $callback ) {

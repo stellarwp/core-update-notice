@@ -48,11 +48,11 @@ abstract class TestCase extends PHPUnitTestCase {
 	}
 
 	/**
-	 * Stub the stored dismissal option. Pass '' for never dismissed.
+	 * Stub the stored dismissal option.
 	 *
-	 * @param mixed $value
+	 * @param array<string, true> $value Exact dismissed versions, keyed by version.
 	 */
-	protected function stubDismissed( $value ): void {
+	protected function stubDismissed( array $value ): void {
 		Functions\when( 'get_option' )->alias(
 			static function ( string $name, $default = false ) use ( $value ) {
 				return $name === CoreUpdateNotice::DISMISSED_OPTION ? $value : $default;
