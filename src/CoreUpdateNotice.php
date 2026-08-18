@@ -7,23 +7,16 @@ namespace StellarWP\CoreUpdateNotice;
 /**
  * Prompts site administrators to update WordPress while the install is behind the latest release.
  *
- * Consumers Strauss-prefix their own copy of this class, so nothing here may rely on class names,
- * namespaces or constants being shared between plugins. The cross-plugin state is carried entirely
- * by string keys, which prefixing does not rewrite.
+ * Each plugin Strauss-prefixes its own copy, so cross-plugin state is carried by string keys only:
+ * prefixing rewrites namespaces and class names, not literals.
  */
 class CoreUpdateNotice
 {
     /**
-     * Dismissal record shared with the other plugins that display this notice, so a site running
-     * more than one of them only has to dismiss it once. Do not prefix it per plugin.
+     * Set of dismissed offers, keyed "{version}|{locale}" like WordPress' dismissed_update_core.
+     * A set, so dismissing 6.9 does not also hide a 6.8.1 security release.
      *
-     * Holds a set keyed "{version}|{locale}", the same shape WordPress uses for
-     * `dismissed_update_core`. A set rather than a single version because dismissing one offer must
-     * not silence a different one: an admin who dismisses 6.9 still needs to be told about a 6.8.1
-     * security release.
-     *
-     * Stored with the site option API, so one dismissal covers a whole multisite network. On single
-     * site that falls through to update_option() with autoload disabled.
+     * Shared with the other plugins showing this notice. Do not prefix it per plugin.
      */
     public const DISMISSED_OPTION = 'nx_wp_core_update_notice_dismissed';
 
@@ -35,24 +28,19 @@ class CoreUpdateNotice
     public const DISMISS_ACTION = 'nx-dismiss-wp-core-update-notice';
 
     /**
-     * The version of the notice itself, independent of the package version. Bump it whenever the
-     * notice's copy or behaviour changes.
-     *
-     * When several plugins bundle this package, the highest version registered on the request is
-     * the one that renders. A plugin that has been updated therefore controls the notice for the
-     * whole site, without waiting for the others to catch up.
+     * Highest version registered this request wins the render, so an updated plugin controls the
+     * notice site-wide. Bump when the copy or behaviour changes, not for the package version.
      */
     public const NOTICE_VERSION = '1.0.0';
 
     /**
-     * Global holding the highest notice version registered this request. Read with
-     * {@see self::isNewestRegistered()}.
+     * Global holding the highest notice version registered this request.
      */
     public const VERSION_KEY = 'nx_wp_core_update_notice_version';
 
     /**
-     * Global key marking that a copy of this notice has already rendered this request. A static
-     * property cannot do this job: each plugin prefixes the class, so each copy gets its own.
+     * Global marking that a copy already rendered this request. A static property cannot do this:
+     * each plugin prefixes the class, so each copy gets its own.
      */
     public const RENDER_GUARD = 'nx_wp_core_update_notice_rendered';
 
@@ -86,11 +74,8 @@ class CoreUpdateNotice
     }
 
     /**
-     * Hook the notice into wp-admin and enter this copy into the version contest.
-     *
-     * Call this on `init` or `admin_init`, never from inside `admin_notices`: a copy registering
-     * once that hook is already running can claim the contest without its own callback being
-     * reached, which suppresses the notice for the request.
+     * Call on `init` or `admin_init`. Registering from inside `admin_notices` claims the version
+     * without this copy's own callback being reached, suppressing the notice for the request.
      */
     public function register(): void
     {
@@ -194,11 +179,8 @@ class CoreUpdateNotice
     }
 
     /**
-     * Whether this copy is the highest-versioned one registered on this request.
-     *
-     * Every copy registers before `admin_notices` fires, so by render time the global holds the
-     * highest version on the site. Copies below it stand down; ties fall to whichever renders
-     * first, which the render guard then settles.
+     * Whether this copy is the highest-versioned one registered this request. Ties fall to
+     * whichever renders first, settled by the render guard.
      */
     public function isNewestRegistered(): bool
     {
@@ -236,10 +218,8 @@ class CoreUpdateNotice
     }
 
     /**
-     * The offer key the dismiss link carries, or the current offer when the link did not name one.
-     *
-     * The key travels in the URL so the dismissal records exactly what the user was shown, rather
-     * than whatever the update transient happens to hold a request later.
+     * The offer key from the dismiss link, so the dismissal records what the user was shown rather
+     * than whatever the transient holds a request later. Falls back to the current offer.
      */
     private function dismissalKeyFromRequest(): ?string
     {
