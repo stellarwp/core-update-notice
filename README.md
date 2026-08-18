@@ -57,9 +57,7 @@ One call, on `init` or later:
 ```php
 use StraussGeneratedNamespace\StellarWP\CoreUpdateNotice\Register;
 
-add_action( 'init', function () {
-	Register::notice();
-} );
+add_action( 'init', static fn() => Register::notice() );
 ```
 
 That hooks `admin_init` for dismissal and `admin_notices` for output. The notice is shown only to
