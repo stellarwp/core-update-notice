@@ -34,17 +34,21 @@ The repository is private, so add it as a VCS repository and require it:
 }
 ```
 
-> We _actually_ recommend that this library gets included in your project
-> using [Strauss](https://github.com/BrianHenryIE/strauss).
->
-> Luckily, adding Strauss to your `composer.json` is only slightly more complicated than adding a
-> typical dependency, so checkout
-> our [strauss docs](https://github.com/stellarwp/global-docs/blob/main/docs/strauss-setup.md).
+Then prefix it with [Strauss](https://github.com/BrianHenryIE/strauss). This is required, not a
+suggestion: WordPress plugins share one PHP namespace, so two plugins shipping unprefixed copies of
+this package would collide on whichever autoloader registered first, and the version that won would
+be whichever plugin happened to load earliest.
+
+See the [Strauss setup docs](https://github.com/stellarwp/global-docs/blob/main/docs/strauss-setup.md).
+
+The package is built for this. Everything it shares between plugins is a string key, which Strauss
+leaves alone while it rewrites namespaces and class names, so prefixed copies still agree on one
+dismissal. See [Shared state](#shared-state).
 
 ## Notes on examples
 
-Since the recommendation is to use Strauss to prefix this library's namespaces, all examples use
-`StraussGeneratedNamespace` to stand in for whatever prefix you configure.
+Because the package is prefixed, all examples use `StraussGeneratedNamespace` to stand in for
+whatever prefix you configure.
 
 ## Displaying the notice
 
@@ -110,8 +114,8 @@ of your strings.
 
 ## Shared state
 
-Consumers prefix their own copy, which rewrites namespaces and class names but not string literals.
-Everything shared between plugins is therefore a string key:
+Each plugin prefixes its own copy, which rewrites namespaces and class names but not string
+literals. Everything shared between plugins is therefore a string key:
 
 | Key | Purpose |
 | --- | --- |
