@@ -172,8 +172,8 @@ and `padding-right: 48px` the absolutely positioned control needs, and core's
 `makeNoticesDismissible()` skips notices that already contain a `.notice-dismiss`, so no second,
 non-persisting button is appended. No script ships.
 
-On multisite, `update_core` is a super-admin capability and the update transient is network wide,
-so the dismissal is stored network wide to match. The notice is hooked into the network admin as
+On multisite, `update_core` is a super-admin capability and the update transient is network-wide,
+so the dismissal is stored network-wide to match. The notice is hooked into the network admin as
 well, which is where `update-core.php` lives for a super admin.
 
 ## Development
