@@ -152,14 +152,32 @@ literals. Everything shared between plugins is therefore a string key:
 The shared filter carries only a version string and object reference, so prefixed copies can
 participate without sharing PHP classes or direct globals.
 
+These keys and the values passed through them are a cross-version compatibility contract. Do not
+rename them or require the winner object to belong to a particular PHP class: another plugin may
+still be running a prefixed copy of v1. The winner filter payload has this minimum shape:
+
+```php
+[
+	'version' => CoreUpdateNotice::NOTICE_VERSION,
+	'notice'  => $notice,
+]
+```
+
+Older copies must preserve unknown payload fields so newer releases can extend it. The highest
+version wins, and equal versions keep the first candidate. The dismiss nonce action is always
+`CoreUpdateNotice::DISMISS_ACTION . ':' . $offeredVersion`; changing that formula would prevent a
+different bundled copy from handling the rendered link.
+
 Dismissal is a nonce-protected link rather than the core dismiss button, which only removes the node
 client side. The notice carries `is-dismissible` because that rule supplies the `position: relative`
 and `padding-right: 48px` the absolutely positioned control needs, and core's
 `makeNoticesDismissible()` skips notices that already contain a `.notice-dismiss`, so no second,
 non-persisting button is appended. No script ships.
 
-On multisite, `update_option` writes per site while `update_core` is a network capability and the
-update transient is network wide, so the flag is per site.
+On multisite, the notice intentionally appears only on individual site admin screens, not in
+Network Admin. The `update_core` capability still limits it to super administrators, while
+`update_option` stores each site's dismissal separately and the update transient remains network
+wide.
 
 ## Development
 
